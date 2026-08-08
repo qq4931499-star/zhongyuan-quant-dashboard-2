@@ -39,10 +39,11 @@ async function loadImageAsDataUrl(url: string) {
 }
 
 function MetricCard({ label, value, detail, tone = "navy" }: { label: string; value: string; detail: string; tone?: "navy" | "red" | "gold" }) {
+  const lengthClass = value.length >= 12 ? "metric-value-very-long" : value.length >= 9 ? "metric-value-long" : "";
   return (
     <article className={`metric-card metric-${tone}`}>
       <div className="metric-card-top"><span>{label}</span><span className="metric-marker" /></div>
-      <strong>{value}</strong>
+      <strong className={lengthClass}>{value}</strong>
       <small>{detail}</small>
     </article>
   );
