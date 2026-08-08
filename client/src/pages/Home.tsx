@@ -6,13 +6,7 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 
-const LOGO_DATA_URL = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(`
-  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
-    <rect width="120" height="120" rx="28" fill="#b61928"/>
-    <path d="M23 32h74L69 60l28 28H23l28-28L23 32Z" fill="#f7f4ef"/>
-    <circle cx="60" cy="60" r="12" fill="#e5b172"/>
-  </svg>
-`)}`;
+const BRAND_LOGO_URL = "/manus-storage/zhongyuan-company-logo_05345835.png";
 
 const DEFAULT_SETTINGS = {
   title: "中圆量化 月度收益走势",
@@ -27,13 +21,21 @@ type TradeField = "symbol" | "stockName" | "buyPrice" | "sellPrice" | "buyDate" 
 function BrandLogo({ exportMode = false }: { exportMode?: boolean }) {
   return (
     <div className={`brand-logo ${exportMode ? "brand-logo-export" : ""}`}>
-      <img data-export-logo src={LOGO_DATA_URL} alt="中圆公司标志" />
-      <div className="brand-wordmark">
-        <strong>中圆</strong>
-        <span>ZHONGYUAN QUANT</span>
-      </div>
+      <img data-export-logo src={BRAND_LOGO_URL} alt="中圆公司标志" />
     </div>
   );
+}
+
+async function loadImageAsDataUrl(url: string) {
+  const response = await fetch(url, { cache: "force-cache" });
+  if (!response.ok) throw new Error("品牌 Logo 加载失败");
+  const blob = await response.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => typeof reader.result === "string" ? resolve(reader.result) : reject(new Error("品牌 Logo 转换失败"));
+    reader.onerror = () => reject(new Error("品牌 Logo 转换失败"));
+    reader.readAsDataURL(blob);
+  });
 }
 
 function MetricCard({ label, value, detail, tone = "navy" }: { label: string; value: string; detail: string; tone?: "navy" | "red" | "gold" }) {
@@ -163,28 +165,42 @@ export default function Home() {
   };
 
   const exportMarketingImage = async () => {
-    const node = exportRef.current;
-    if (!node) return;
+    const sourceStage = exportRef.current?.querySelector<HTMLElement>("#marketing-export");
+    if (!sourceStage) {
+      toast.error("营销图画布尚未准备完成");
+      return;
+    }
     setIsExporting(true);
+    const captureHost = document.createElement("div");
     try {
+      const logoDataUrl = await loadImageAsDataUrl(BRAND_LOGO_URL);
+      const captureStage = sourceStage.cloneNode(true) as HTMLElement;
+      captureStage.id = "marketing-export-capture";
+      captureStage.classList.add("marketing-export-capture");
+      captureStage.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
+      Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", height: "1620px", pointerEvents: "none", overflow: "hidden" });
+      captureHost.appendChild(captureStage);
+      document.body.appendChild(captureHost);
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-      const canvas = await html2canvas(node, {
-        backgroundColor: "#f7f4ef", useCORS: true, allowTaint: false, scale: 1,
+      await document.fonts?.ready;
+      const canvas = await html2canvas(captureStage, {
+        backgroundColor: "#f7f4ef", useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: 1620, windowWidth: 1080, windowHeight: 1620,
         onclone: clonedDocument => {
-          const clonedStage = clonedDocument.querySelector<HTMLElement>("[data-export-stage]");
-          if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block" });
-          clonedDocument.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = LOGO_DATA_URL; });
+          const clonedStage = clonedDocument.querySelector<HTMLElement>("#marketing-export-capture");
+          if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0" });
+          clonedDocument.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
         },
       });
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
       if (!blob) throw new Error("图片生成失败");
+      if (blob.size < 10_000) throw new Error("生成的图片数据异常，请重试");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url; link.download = `${settings.title}-营销图.png`; link.click(); URL.revokeObjectURL(url);
+      link.href = url; link.download = `${settings.title.replace(/[\\/:*?"<>|]/g, "-")}-营销图.png`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
       toast.success("营销图已下载", { description: "1080 × 1620 PNG 已生成。" });
     } catch (error) {
       toast.error("导出失败", { description: error instanceof Error ? error.message : "请稍后重试" });
-    } finally { setIsExporting(false); }
+    } finally { captureHost.remove(); setIsExporting(false); }
   };
 
   if (isLoading) return <main className="loading-screen"><Loader2 className="spin" /><span>正在连接收益数据…</span></main>;
