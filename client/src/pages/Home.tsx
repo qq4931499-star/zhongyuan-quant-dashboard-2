@@ -61,7 +61,7 @@ function TrendLabel({ x, y, index, value }: { x?: number; y?: number; index?: nu
 function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; exportMode?: boolean }) {
   const trend = useMemo(() => calculateTrend(trades), [trades]);
   const finalReturn = trend.at(-1)?.cumulativeReturn ?? 0;
-  const chartHeight = exportMode ? 300 : 340;
+  const chartHeight = exportMode ? 318 : 340;
   return (
     <section className={`trend-panel ${exportMode ? "trend-panel-export" : ""}`}>
       <div className="section-heading">
@@ -178,13 +178,15 @@ export default function Home() {
       captureStage.id = "marketing-export-capture";
       captureStage.classList.add("marketing-export-capture");
       captureStage.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
-      Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", height: "1620px", pointerEvents: "none", overflow: "hidden" });
+      Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", pointerEvents: "none", overflow: "hidden" });
       captureHost.appendChild(captureStage);
       document.body.appendChild(captureHost);
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       await document.fonts?.ready;
+      const captureHeight = Math.ceil(captureStage.scrollHeight);
+      if (captureHeight < 500) throw new Error("营销图内容高度异常");
       const canvas = await html2canvas(captureStage, {
-        backgroundColor: "#f7f4ef", useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: 1620, windowWidth: 1080, windowHeight: 1620,
+        backgroundColor: "#f7f4ef", useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: captureHeight, windowWidth: 1080, windowHeight: captureHeight,
         onclone: clonedDocument => {
           const clonedStage = clonedDocument.querySelector<HTMLElement>("#marketing-export-capture");
           if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0" });
@@ -197,7 +199,7 @@ export default function Home() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url; link.download = `${settings.title.replace(/[\\/:*?"<>|]/g, "-")}-营销图.png`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast.success("营销图已下载", { description: "1080 × 1620 PNG 已生成。" });
+      toast.success("营销图已下载", { description: `1080 × ${captureHeight} PNG 已生成。` });
     } catch (error) {
       toast.error("导出失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { captureHost.remove(); setIsExporting(false); }

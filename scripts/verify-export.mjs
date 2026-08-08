@@ -18,7 +18,7 @@ try {
   if (bytes.toString("ascii", 1, 4) !== "PNG") throw new Error("下载文件不是 PNG");
   const width = bytes.readUInt32BE(16);
   const height = bytes.readUInt32BE(20);
-  if (width !== 1080 || height !== 1620) throw new Error(`PNG 尺寸异常：${width}×${height}`);
+  if (width !== 1080 || height < 900 || height > 1450) throw new Error(`PNG 尺寸异常：${width}×${height}`);
   console.log(JSON.stringify({ fileName: download.suggestedFilename(), byteLength: bytes.length, width, height }));
   if (process.env.EXPORT_VERIFY_OUTPUT) await copyFile(filePath, process.env.EXPORT_VERIFY_OUTPUT);
   await rm(filePath, { force: true });
