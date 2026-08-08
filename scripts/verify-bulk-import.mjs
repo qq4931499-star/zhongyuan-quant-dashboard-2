@@ -8,11 +8,17 @@ try {
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
   await page.getByRole("button", { name: "批量导入" }).waitFor({ state: "visible", timeout: 20000 });
   const initialCount = await page.locator(".trade-table tbody tr").count();
+  const [directTemplate] = await Promise.all([
+    page.waitForEvent("download", { timeout: 15000 }),
+    page.locator(".table-actions .template-button").click(),
+  ]);
+  if (!directTemplate.suggestedFilename().endsWith(".xlsx")) throw new Error("直接模板下载格式异常");
   await page.getByRole("button", { name: "批量导入" }).click();
-  await page.getByRole("button", { name: "下载模板" }).waitFor({ state: "visible" });
+  await page.locator(".import-dialog").waitFor({ state: "visible" });
+  await page.locator(".import-helper button").waitFor({ state: "visible" });
   const [template] = await Promise.all([
     page.waitForEvent("download", { timeout: 15000 }),
-    page.getByRole("button", { name: "下载模板" }).click(),
+    page.locator(".import-helper button").click(),
   ]);
   if (!template.suggestedFilename().endsWith(".xlsx")) throw new Error("模板下载格式异常");
 
@@ -34,7 +40,7 @@ try {
   await page.locator(".import-dialog").waitFor({ state: "hidden", timeout: 15000 });
   const finalCount = await page.locator(".trade-table tbody tr").count();
   if (finalCount !== initialCount) throw new Error(`重复交易不应新增记录：导入前 ${initialCount}，导入后 ${finalCount}`);
-  console.log(JSON.stringify({ template: template.suggestedFilename(), initialCount, finalCount, csvDuplicateSkipped: true, xlsxDuplicateSkipped: true }));
+  console.log(JSON.stringify({ directTemplate: directTemplate.suggestedFilename(), template: template.suggestedFilename(), importDialogOpened: true, initialCount, finalCount, csvDuplicateSkipped: true, xlsxDuplicateSkipped: true }));
 } finally {
   await browser.close();
 }

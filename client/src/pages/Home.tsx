@@ -106,11 +106,13 @@ function MetricCard({ label, value, detail, tone = "navy" }: { label: string; va
   );
 }
 
-function TrendLabel({ x, y, index, value }: { x?: number; y?: number; index?: number; value?: number }) {
+function TrendLabel({ x, y, index, value, lastIndex }: { x?: number; y?: number; index?: number; value?: number; lastIndex: number }) {
   if (typeof x !== "number" || typeof y !== "number" || typeof value !== "number") return null;
-  const above = (index ?? 0) % 2 === 0;
+  const isFirst = index === 0;
+  const isLast = index === lastIndex;
+  const above = !isFirst && (index ?? 0) % 2 === 0;
   return (
-    <text x={x} y={y + (above ? -15 : 24)} textAnchor="middle" className="trend-data-label">
+    <text x={x + (isFirst ? 13 : isLast ? -13 : 0)} y={y + (isFirst ? 24 : above ? -15 : 24)} textAnchor={isFirst ? "start" : isLast ? "end" : "middle"} className="trend-data-label">
       {formatPercent(value)}
     </text>
   );
@@ -131,9 +133,9 @@ function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; expo
       </div>
       <div className="chart-wrap" style={{ height: chartHeight }}>
         {trend.length === 0 ? <div className="chart-empty"><TrendingUp /><span>暂无交易数据，新增交易后将自动生成收益趋势。</span></div> : <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={trend} margin={{ top: 42, right: 34, left: 0, bottom: 8 }}>
+          <LineChart data={trend} margin={{ top: 42, right: 46, left: 8, bottom: 8 }}>
             <CartesianGrid stroke="#ded8d0" strokeDasharray="2 5" vertical={false} />
-            <XAxis dataKey="date" tickFormatter={value => value.slice(5).replace("-", "/")} tickLine={false} axisLine={false} tick={{ fill: "#657083", fontSize: 12, fontFamily: "DM Mono" }} />
+            <XAxis dataKey="date" padding={{ left: 18, right: 18 }} tickFormatter={value => value.slice(5).replace("-", "/")} tickLine={false} axisLine={false} tick={{ fill: "#657083", fontSize: 12, fontFamily: "DM Mono" }} />
             <YAxis tickFormatter={value => `${(value * 100).toFixed(0)}%`} width={48} tickLine={false} axisLine={false} tick={{ fill: "#657083", fontSize: 12, fontFamily: "DM Mono" }} />
             <Tooltip
               cursor={{ stroke: "#e5b172", strokeWidth: 1 }}
@@ -142,7 +144,7 @@ function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; expo
               contentStyle={{ background: "#172036", border: "none", borderRadius: 10, color: "#fff", fontSize: 12 }}
               labelStyle={{ color: "#e5b172" }}
             />
-            <Line type="monotone" dataKey="cumulativeReturn" stroke="#b61928" strokeWidth={3} dot={{ r: 4, fill: "#f7f4ef", stroke: "#b61928", strokeWidth: 2.5 }} activeDot={{ r: 6, fill: "#e5b172", stroke: "#b61928", strokeWidth: 2 }} label={<TrendLabel />} isAnimationActive={false} />
+            <Line type="monotone" dataKey="cumulativeReturn" stroke="#b61928" strokeWidth={3} dot={{ r: 4, fill: "#f7f4ef", stroke: "#b61928", strokeWidth: 2.5 }} activeDot={{ r: 6, fill: "#e5b172", stroke: "#b61928", strokeWidth: 2 }} label={<TrendLabel lastIndex={trend.length - 1} />} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>}
       </div>
@@ -359,7 +361,7 @@ export default function Home() {
         <section className="trade-section">
           <div className="section-heading table-heading">
             <div><p className="eyebrow">Trading ledger</p><h2>交易明细</h2></div>
-            <div className="table-actions"><button className="import-trade-button" onClick={() => setIsImportOpen(true)}><FileUp />批量导入</button><button className="add-trade-button" onClick={() => setIsModalOpen(true)}><Plus />新增交易</button></div>
+            <div className="table-actions"><button className="template-button" onClick={downloadImportTemplate}><Download />下载模板</button><button className="import-trade-button" onClick={() => { resetImport(); setIsImportOpen(true); }}><FileUp />批量导入</button><button className="add-trade-button" onClick={() => setIsModalOpen(true)}><Plus />新增交易</button></div>
           </div>
           <div className="table-scroll">
             <table className="trade-table">
