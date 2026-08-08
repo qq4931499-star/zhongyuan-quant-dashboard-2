@@ -1,10 +1,12 @@
 import { trpc } from "@/lib/trpc";
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, type QuantTrade } from "@shared/quant";
 import html2canvas from "html2canvas";
-import { ArrowUpRight, CalendarDays, Download, Loader2, Plus, Trash2, TrendingUp } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRight, CalendarDays, CheckCircle2, Download, FileSpreadsheet, FileUp, Loader2, Plus, Trash2, TrendingUp } from "lucide-react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
+import { read, utils as xlsxUtils, writeFile } from "xlsx";
 
 const BRAND_LOGO_URL = "/manus-storage/zhongyuan-company-logo_05345835.png";
 
@@ -17,6 +19,61 @@ const DEFAULT_SETTINGS = {
 
 type Settings = typeof DEFAULT_SETTINGS;
 type TradeField = "symbol" | "stockName" | "buyPrice" | "sellPrice" | "buyDate" | "sellDate";
+type ImportTrade = Omit<QuantTrade, "id">;
+type ImportIssue = { row: number; message: string };
+
+const importColumns = [
+  { key: "symbol", label: "股票代码", aliases: ["股票代码", "代码", "symbol", "stock code"] },
+  { key: "stockName", label: "股票名称", aliases: ["股票名称", "名称", "stockname", "stock name"] },
+  { key: "buyPrice", label: "买入价", aliases: ["买入价", "买入价格", "buyprice", "buy price"] },
+  { key: "sellPrice", label: "卖出价", aliases: ["卖出价", "卖出价格", "sellprice", "sell price"] },
+  { key: "buyDate", label: "买入日期", aliases: ["买入日期", "buydate", "buy date"] },
+  { key: "sellDate", label: "卖出日期", aliases: ["卖出日期", "selldate", "sell date"] },
+] as const;
+
+function findImportCell(record: Record<string, unknown>, aliases: readonly string[]) {
+  const entry = Object.entries(record).find(([header]) => aliases.includes(header.trim().toLowerCase()));
+  return entry?.[1] ?? "";
+}
+
+function normalizeImportDate(value: unknown) {
+  const parts = String(value ?? "").trim().replace(/[./]/g, "-").split("-").filter(Boolean);
+  if (parts.length !== 3 || parts.some(part => !/^\d+$/.test(part))) return null;
+  const [first, second, third] = parts;
+  const year = first!.length === 4 ? first! : third!.length === 2 ? `20${third}` : third!;
+  const month = first!.length === 4 ? second! : first!;
+  const day = first!.length === 4 ? third! : second!;
+  if (year.length !== 4) return null;
+  const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+  const date = new Date(`${normalized}T00:00:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== normalized ? null : normalized;
+}
+
+function parseImportRecords(records: Record<string, unknown>[]) {
+  const issues: ImportIssue[] = [];
+  if (records.length === 0) return { rows: [] as ImportTrade[], issues: [{ row: 1, message: "未识别到可导入的数据行" }] };
+  const headers = Object.keys(records[0]!).map(header => header.trim().toLowerCase());
+  const missingHeaders = importColumns.filter(column => !headers.some(header => (column.aliases as readonly string[]).includes(header))).map(column => column.label);
+  if (missingHeaders.length > 0) return { rows: [] as ImportTrade[], issues: [{ row: 1, message: `缺少列：${missingHeaders.join("、")}` }] };
+
+  const rows = records.reduce<ImportTrade[]>((validRows, record, index) => {
+    const rowNumber = index + 2;
+    const symbol = String(findImportCell(record, importColumns[0].aliases)).trim().toUpperCase();
+    const stockName = String(findImportCell(record, importColumns[1].aliases)).trim();
+    const buyPrice = Number(String(findImportCell(record, importColumns[2].aliases)).replace(/[￥¥,\s]/g, ""));
+    const sellPrice = Number(String(findImportCell(record, importColumns[3].aliases)).replace(/[￥¥,\s]/g, ""));
+    const buyDate = normalizeImportDate(findImportCell(record, importColumns[4].aliases));
+    const sellDate = normalizeImportDate(findImportCell(record, importColumns[5].aliases));
+    const messages = [!symbol && "股票代码为空", !stockName && "股票名称为空", (!Number.isFinite(buyPrice) || buyPrice <= 0) && "买入价无效", (!Number.isFinite(sellPrice) || sellPrice <= 0) && "卖出价无效", !buyDate && "买入日期无效", !sellDate && "卖出日期无效"].filter(Boolean) as string[];
+    if (messages.length > 0) {
+      issues.push({ row: rowNumber, message: messages.join("；") });
+      return validRows;
+    }
+    validRows.push({ symbol, stockName, buyPrice, sellPrice, buyDate: buyDate!, sellDate: sellDate! });
+    return validRows;
+  }, []);
+  return { rows, issues };
+}
 
 function BrandLogo({ exportMode = false }: { exportMode?: boolean }) {
   return (
@@ -132,8 +189,13 @@ export default function Home() {
   const [titleDraft, setTitleDraft] = useState(settings.title);
   const [subtitleDraft, setSubtitleDraft] = useState(settings.subtitle);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [importRows, setImportRows] = useState<ImportTrade[]>([]);
+  const [importIssues, setImportIssues] = useState<ImportIssue[]>([]);
+  const [importFileName, setImportFileName] = useState("");
   const exportRef = useRef<HTMLDivElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setTitleDraft(settings.title); setSubtitleDraft(settings.subtitle); }, [settings.title, settings.subtitle]);
 
@@ -142,6 +204,7 @@ export default function Home() {
   const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const deleteTrade = trpc.dashboard.deleteTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const createTrade = trpc.dashboard.createTrade.useMutation({ onSuccess: () => { refresh(); setIsModalOpen(false); toast.success("交易已保存"); }, onError: error => toast.error(error.message) });
+  const bulkImportTrades = trpc.dashboard.bulkImportTrades.useMutation();
 
   const persistSetting = (field: keyof Settings, value: string) => {
     if (value.trim() && value !== settings[field]) updateSettings.mutate({ [field]: value.trim() });
@@ -163,6 +226,62 @@ export default function Home() {
       buyPrice: Number(form.get("buyPrice")), sellPrice: Number(form.get("sellPrice")),
       buyDate: String(form.get("buyDate") ?? ""), sellDate: String(form.get("sellDate") ?? ""),
     });
+  };
+
+  const resetImport = () => {
+    setImportRows([]); setImportIssues([]); setImportFileName("");
+    if (importInputRef.current) importInputRef.current.value = "";
+  };
+
+  const downloadImportTemplate = () => {
+    const workbook = xlsxUtils.book_new();
+    const worksheet = xlsxUtils.json_to_sheet([
+      { "股票代码": "600519.SH", "股票名称": "贵州茅台", "买入价": 1685.5, "卖出价": 1798.6, "买入日期": "2026-05-06", "卖出日期": "2026-05-07" },
+      { "股票代码": "300750.SZ", "股票名称": "宁德时代", "买入价": 193.45, "卖出价": 206.91, "买入日期": "2026-05-07", "卖出日期": "2026-05-08" },
+    ]);
+    xlsxUtils.book_append_sheet(workbook, worksheet, "交易明细");
+    writeFile(workbook, "中圆量化-交易批量导入模板.xlsx");
+  };
+
+  const handleImportFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    resetImport();
+    if (!file) return;
+    if (!/\.(csv|xlsx)$/i.test(file.name)) {
+      setImportIssues([{ row: 1, message: "仅支持 CSV 或 XLSX 文件" }]);
+      return;
+    }
+    try {
+      const workbook = file.name.toLowerCase().endsWith(".csv")
+        ? read((await file.text()).replace(/^\uFEFF/, ""), { type: "string", cellDates: true })
+        : read(await file.arrayBuffer(), { type: "array", cellDates: true });
+      const firstSheet = workbook.Sheets[workbook.SheetNames[0] ?? ""];
+      if (!firstSheet) throw new Error("未找到工作表");
+      const records = xlsxUtils.sheet_to_json<Record<string, unknown>>(firstSheet, { defval: "", raw: false, dateNF: "yyyy-mm-dd" });
+      if (records.length > 500) throw new Error("单次最多导入 500 条交易记录");
+      const parsed = parseImportRecords(records);
+      setImportRows(parsed.rows); setImportIssues(parsed.issues); setImportFileName(file.name);
+      if (parsed.issues.length === 0) toast.success(`已识别 ${parsed.rows.length} 条可导入交易`);
+    } catch (error) {
+      setImportIssues([{ row: 1, message: error instanceof Error ? error.message : "文件解析失败" }]);
+    }
+  };
+
+  const submitBulkImport = async () => {
+    if (importRows.length === 0 || importIssues.length > 0) return;
+    try {
+      const result = await bulkImportTrades.mutateAsync({ trades: importRows });
+      if (result.issues.length > 0) {
+        setImportIssues(result.issues.map(issue => ({ row: issue.row, message: issue.messages.join("；") })));
+        toast.error("服务器校验未通过，请修正文件后重试");
+        return;
+      }
+      await refresh();
+      toast.success(`已导入 ${result.imported} 条交易`, { description: result.skipped > 0 ? `已跳过 ${result.skipped} 条重复交易。` : "指标与趋势已自动刷新。" });
+      setIsImportOpen(false); resetImport();
+    } catch (error) {
+      toast.error("批量导入失败", { description: error instanceof Error ? error.message : "请检查文件内容后重试" });
+    }
   };
 
   const exportMarketingImage = async () => {
@@ -240,7 +359,7 @@ export default function Home() {
         <section className="trade-section">
           <div className="section-heading table-heading">
             <div><p className="eyebrow">Trading ledger</p><h2>交易明细</h2></div>
-            <button className="add-trade-button" onClick={() => setIsModalOpen(true)}><Plus />新增交易</button>
+            <div className="table-actions"><button className="import-trade-button" onClick={() => setIsImportOpen(true)}><FileUp />批量导入</button><button className="add-trade-button" onClick={() => setIsModalOpen(true)}><Plus />新增交易</button></div>
           </div>
           <div className="table-scroll">
             <table className="trade-table">
@@ -267,6 +386,17 @@ export default function Home() {
       </div>
 
       {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<input name="symbol" required maxLength={32} placeholder="600519.SH" /></label><label>股票名称<input name="stockName" required maxLength={80} placeholder="贵州茅台" /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价<input name="sellPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>买入日期<input name="buyDate" required type="date" defaultValue={settings.startDate} /></label><label>卖出日期<input name="sellDate" required type="date" defaultValue={settings.endDate} /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
+
+      <Dialog open={isImportOpen} onOpenChange={open => { setIsImportOpen(open); if (!open) resetImport(); }}>
+        <DialogContent className="import-dialog" showCloseButton={false}>
+          <DialogHeader><p className="eyebrow">Bulk import</p><DialogTitle>批量导入交易明细</DialogTitle><DialogDescription>支持 CSV 与 XLSX 文件；模板必须包含股票代码、股票名称、买入价、卖出价、买入日期和卖出日期。</DialogDescription></DialogHeader>
+          <div className="import-helper"><div><FileSpreadsheet /><span>下载标准模板后，填入最多 500 条交易。</span></div><button type="button" onClick={downloadImportTemplate}><Download />下载模板</button></div>
+          <label className="import-dropzone"><input ref={importInputRef} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportFile} /><FileUp /><strong>选择 CSV 或 Excel 文件</strong><span>文件仅在浏览器中解析并发送交易数据</span></label>
+          {importFileName && <div className={`import-summary ${importIssues.length > 0 ? "has-errors" : ""}`}>{importIssues.length === 0 ? <CheckCircle2 /> : <span>!</span>}<div><strong>{importFileName}</strong><small>{importIssues.length === 0 ? `已识别 ${importRows.length} 条交易，导入时将自动跳过重复记录。` : `发现 ${importIssues.length} 处问题，请修正后重新选择文件。`}</small></div></div>}
+          {importIssues.length > 0 && <div className="import-issues">{importIssues.slice(0, 5).map(issue => <p key={`${issue.row}-${issue.message}`}>第 {issue.row} 行：{issue.message}</p>)}{importIssues.length > 5 && <p>另有 {importIssues.length - 5} 项问题未展开。</p>}</div>}
+          <DialogFooter className="import-dialog-actions"><DialogClose asChild><button type="button" className="import-cancel">取消</button></DialogClose><button type="button" className="import-confirm" disabled={importRows.length === 0 || importIssues.length > 0 || bulkImportTrades.isPending} onClick={submitBulkImport}>{bulkImportTrades.isPending ? <Loader2 className="spin" /> : <FileUp />}{bulkImportTrades.isPending ? "正在导入" : `导入 ${importRows.length} 条交易`}</button></DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} /></div></div>
     </main>

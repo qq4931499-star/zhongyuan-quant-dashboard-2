@@ -8,6 +8,7 @@ import {
   users,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
+import { dedupeImportedTrades, type ImportTrade } from "@shared/tradeImport";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -150,6 +151,29 @@ export async function createTrade(values: InsertTrade) {
   const result = await db.insert(trades).values(values);
   const [record] = await db.select().from(trades).where(eq(trades.id, Number(result[0].insertId))).limit(1);
   return record;
+}
+
+export async function bulkImportTrades(values: ImportTrade[]) {
+  const db = await ensureDashboardSeed();
+  const existing = await db.select({
+    symbol: trades.symbol,
+    stockName: trades.stockName,
+    buyPrice: trades.buyPrice,
+    sellPrice: trades.sellPrice,
+    buyDate: trades.buyDate,
+    sellDate: trades.sellDate,
+  }).from(trades);
+  const { accepted, duplicateIndexes } = dedupeImportedTrades(values, existing);
+
+  if (accepted.length > 0) {
+    await db.insert(trades).values(accepted);
+  }
+
+  return {
+    imported: accepted.length,
+    skipped: duplicateIndexes.length,
+    skippedRows: duplicateIndexes.map(index => index + 1),
+  } as const;
 }
 
 export async function updateTrade(id: number, values: Partial<InsertTrade>) {
