@@ -2,6 +2,18 @@ import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
+import { createTrade, deleteTrade, getDashboardSnapshot, updateDashboardSettings, updateTrade } from "./db";
+import { z } from "zod";
+
+const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD");
+const tradeFields = z.object({
+  symbol: z.string().trim().min(1).max(32).transform(value => value.toUpperCase()),
+  stockName: z.string().trim().min(1).max(80),
+  buyPrice: z.number().positive(),
+  sellPrice: z.number().positive(),
+  buyDate: dateSchema,
+  sellDate: dateSchema,
+});
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -16,13 +28,22 @@ export const appRouter = router({
       } as const;
     }),
   }),
-
-  // TODO: add feature routers here, e.g.
-  // todo: router({
-  //   list: protectedProcedure.query(({ ctx }) =>
-  //     db.getUserTodos(ctx.user.id)
-  //   ),
-  // }),
+  dashboard: router({
+    snapshot: publicProcedure.query(() => getDashboardSnapshot()),
+    updateSettings: publicProcedure
+      .input(z.object({
+        title: z.string().trim().min(1).max(120).optional(),
+        subtitle: z.string().trim().max(120).optional(),
+        startDate: dateSchema.optional(),
+        endDate: dateSchema.optional(),
+      }).refine(value => Object.keys(value).length > 0, "至少提交一个配置字段"))
+      .mutation(({ input }) => updateDashboardSettings(input)),
+    createTrade: publicProcedure.input(tradeFields).mutation(({ input }) => createTrade(input)),
+    updateTrade: publicProcedure
+      .input(z.object({ id: z.number().int().positive(), values: tradeFields.partial() }))
+      .mutation(({ input }) => updateTrade(input.id, input.values)),
+    deleteTrade: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteTrade(input.id)),
+  }),
 });
 
 export type AppRouter = typeof appRouter;

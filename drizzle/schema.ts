@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
+import { double, int, mysqlEnum, mysqlTable, text, timestamp, varchar } from "drizzle-orm/mysql-core";
 
 /**
  * Core user table backing auth flow.
@@ -25,4 +25,31 @@ export const users = mysqlTable("users", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 
-// TODO: Add your tables here
+/** Shared page copy and display-only statistical period. This table deliberately contains one row. */
+export const dashboardSettings = mysqlTable("dashboardSettings", {
+  id: int("id").autoincrement().primaryKey(),
+  title: varchar("title", { length: 120 }).notNull(),
+  subtitle: varchar("subtitle", { length: 120 }).notNull(),
+  startDate: varchar("startDate", { length: 10 }).notNull(),
+  endDate: varchar("endDate", { length: 10 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+/** A public, editable record of an individual completed trade. */
+export const trades = mysqlTable("trades", {
+  id: int("id").autoincrement().primaryKey(),
+  symbol: varchar("symbol", { length: 32 }).notNull(),
+  stockName: varchar("stockName", { length: 80 }).notNull(),
+  buyPrice: double("buyPrice").notNull(),
+  sellPrice: double("sellPrice").notNull(),
+  buyDate: varchar("buyDate", { length: 10 }).notNull(),
+  sellDate: varchar("sellDate", { length: 10 }).notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DashboardSettings = typeof dashboardSettings.$inferSelect;
+export type InsertDashboardSettings = typeof dashboardSettings.$inferInsert;
+export type Trade = typeof trades.$inferSelect;
+export type InsertTrade = typeof trades.$inferInsert;

@@ -1,6 +1,12 @@
-import { eq } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
-import { InsertUser, users } from "../drizzle/schema";
+import {
+  dashboardSettings,
+  InsertTrade,
+  InsertUser,
+  trades,
+  users,
+} from "../drizzle/schema";
 import { ENV } from './_core/env';
 
 let _db: ReturnType<typeof drizzle> | null = null;
@@ -89,4 +95,72 @@ export async function getUserByOpenId(openId: string) {
   return result.length > 0 ? result[0] : undefined;
 }
 
-// TODO: add feature queries here as your schema grows.
+const initialSettings = {
+  id: 1,
+  title: "中圆量化 月度收益走势",
+  subtitle: "（T+1操作）",
+  startDate: "2026-05-01",
+  endDate: "2026-05-31",
+} as const;
+
+const initialTrades: InsertTrade[] = [
+  { symbol: "600519.SH", stockName: "贵州茅台", buyPrice: 1685.5, sellPrice: 1798.6, buyDate: "2026-05-06", sellDate: "2026-05-07" },
+  { symbol: "300750.SZ", stockName: "宁德时代", buyPrice: 193.45, sellPrice: 206.91, buyDate: "2026-05-07", sellDate: "2026-05-08" },
+  { symbol: "601888.SH", stockName: "中国中免", buyPrice: 89.21, sellPrice: 95.98, buyDate: "2026-05-08", sellDate: "2026-05-09" },
+  { symbol: "000858.SZ", stockName: "五粮液", buyPrice: 152.3, sellPrice: 161.91, buyDate: "2026-05-09", sellDate: "2026-05-10" },
+  { symbol: "002594.SZ", stockName: "比亚迪", buyPrice: 245.6, sellPrice: 260.64, buyDate: "2026-05-10", sellDate: "2026-05-13" },
+];
+
+async function ensureDashboardSeed() {
+  const db = await getDb();
+  if (!db) throw new Error("数据库暂不可用");
+
+  await db.insert(dashboardSettings).values(initialSettings).onDuplicateKeyUpdate({
+    set: { id: initialSettings.id },
+  });
+
+  const existingTrades = await db.select({ id: trades.id }).from(trades).limit(1);
+  if (existingTrades.length === 0) {
+    await db.insert(trades).values(initialTrades);
+  }
+  return db;
+}
+
+export async function getDashboardSnapshot() {
+  const db = await ensureDashboardSeed();
+  const [settings] = await db.select().from(dashboardSettings).where(eq(dashboardSettings.id, 1)).limit(1);
+  const records = await db.select().from(trades).orderBy(asc(trades.sellDate), asc(trades.id));
+  return { settings, trades: records };
+}
+
+export async function updateDashboardSettings(values: {
+  title?: string;
+  subtitle?: string;
+  startDate?: string;
+  endDate?: string;
+}) {
+  const db = await ensureDashboardSeed();
+  await db.update(dashboardSettings).set(values).where(eq(dashboardSettings.id, 1));
+  const [settings] = await db.select().from(dashboardSettings).where(eq(dashboardSettings.id, 1)).limit(1);
+  return settings;
+}
+
+export async function createTrade(values: InsertTrade) {
+  const db = await ensureDashboardSeed();
+  const result = await db.insert(trades).values(values);
+  const [record] = await db.select().from(trades).where(eq(trades.id, Number(result[0].insertId))).limit(1);
+  return record;
+}
+
+export async function updateTrade(id: number, values: Partial<InsertTrade>) {
+  const db = await ensureDashboardSeed();
+  await db.update(trades).set(values).where(eq(trades.id, id));
+  const [record] = await db.select().from(trades).where(eq(trades.id, id)).limit(1);
+  return record;
+}
+
+export async function deleteTrade(id: number) {
+  const db = await ensureDashboardSeed();
+  await db.delete(trades).where(eq(trades.id, id));
+  return { success: true } as const;
+}
