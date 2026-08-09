@@ -11,6 +11,14 @@ try {
     await page.getByRole("button", { name: buttonName }).click();
     const dialog = page.locator(".export-options-dialog");
     await dialog.waitFor({ state: "visible", timeout: 10000 });
+    const dialogLayout = await dialog.evaluate((element) => {
+      const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+      const style = getComputedStyle(element);
+      const overlayStyle = overlay ? getComputedStyle(overlay) : null;
+      const rect = element.getBoundingClientRect();
+      return { position: style.position, zIndex: style.zIndex, top: rect.top, overlayPosition: overlayStyle?.position, overlayZIndex: overlayStyle?.zIndex };
+    });
+    if (dialogLayout.position !== "fixed" || dialogLayout.overlayPosition !== "fixed" || Number(dialogLayout.zIndex) < 1001 || Number(dialogLayout.overlayZIndex) < 1000) throw new Error(`导出设置弹窗未正确覆盖页面：${JSON.stringify(dialogLayout)}`);
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 30000 }),
       dialog.getByRole("button", { name: "确认导出" }).click(),
