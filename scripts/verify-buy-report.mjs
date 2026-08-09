@@ -10,8 +10,12 @@ try {
   await page.getByRole("button", { name: "买票战报" }).click();
   const dialog = page.locator(".report-dialog");
   await dialog.waitFor({ state: "visible", timeout: 20000 });
+  const shortcutCount = await dialog.locator(".report-date-shortcuts button").count();
+  if (shortcutCount < 2) throw new Error("买票战报缺少日期快捷选项");
   await dialog.locator('input[type="date"]').fill(firstBuyDate);
   await page.locator("#buy-report .buy-report-card").first().waitFor({ state: "attached", timeout: 5000 });
+  const logicIcons = await page.locator("#buy-report .buy-report-logic article svg").count();
+  if (logicIcons !== 4) throw new Error(`选股逻辑图标数量异常：${logicIcons}`);
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: 30000 }),
     dialog.getByRole("button", { name: "导出战报" }).click(),

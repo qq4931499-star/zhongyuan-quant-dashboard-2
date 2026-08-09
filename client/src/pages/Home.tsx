@@ -2,7 +2,7 @@ import { trpc } from "@/lib/trpc";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, isRealizedTrade, type QuantTrade } from "@shared/quant";
 import html2canvas from "html2canvas";
-import { ArrowUpRight, CalendarDays, CheckCircle2, Download, FileSpreadsheet, FileUp, Loader2, Plus, Trash2, TrendingUp } from "lucide-react";
+import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, FileUp, Loader2, Plus, ShieldCheck, Sparkles, Trash2, TrendingUp } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
@@ -223,11 +223,12 @@ function StrategyPoster({ settings, trades, detailTrades }: { settings: Settings
 
 function BuyReport({ trades, reportDate }: { trades: QuantTrade[]; reportDate: string }) {
   const selectedTrades = trades.filter(trade => trade.buyDate === reportDate).slice(0, 4);
+  const logicItems = [{ label: "趋势识别", Icon: TrendingUp }, { label: "资金行为", Icon: CircleDollarSign }, { label: "多因子共振", Icon: Sparkles }, { label: "风险过滤", Icon: ShieldCheck }];
   return (
     <section id="buy-report" data-export-stage aria-hidden="true">
       <header className="buy-report-header"><BrandLogo exportMode src={POSTER_WHITE_LOGO_URL} /><p>ZHONGYUAN QUANTITATIVE</p><h1>今日买票战报</h1><time>{reportDate.replaceAll("-", ".")}</time><strong>中圆量化智能决策系统</strong></header>
       {selectedTrades.length === 0 ? <div className="buy-report-empty">该日期暂无新增交易明细</div> : <div className={`buy-report-grid buy-report-count-${selectedTrades.length}`}>{selectedTrades.map((trade, index) => <article className="buy-report-card" key={trade.id}><span className="buy-report-badge">标的{["一", "二", "三", "四"][index]}</span><h2>{trade.stockName} <small>/ {trade.symbol}</small></h2><dl><div><dt>买入价格</dt><dd>{trade.buyPrice.toFixed(2)}</dd></div><div><dt>买入日期</dt><dd>{trade.buyDate}</dd></div><div><dt>卖出价格</dt><dd>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</dd></div><div><dt>卖出日期</dt><dd>{trade.sellDate ?? "-----"}</dd></div></dl></article>)}</div>}
-      <section className="buy-report-logic"><span>系统选股逻辑</span><div><b>趋势识别</b><b>资金行为</b><b>多因子共振</b><b>风险过滤</b></div></section>
+      <section className="buy-report-logic"><span>系统选股逻辑</span><div>{logicItems.map(({ label, Icon }) => <article key={label}><Icon /><b>{label}</b></article>)}</div></section>
       <footer className="buy-report-footer"><strong>量行致远 · 衡守初心</strong><span>数据仅供策略研究与交流，不构成任何投资建议</span></footer>
     </section>
   );
@@ -244,6 +245,8 @@ export default function Home() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
   const [isReportOpen, setIsReportOpen] = useState(false);
+  const [isExportOptionsOpen, setIsExportOptionsOpen] = useState(false);
+  const [pendingExport, setPendingExport] = useState<"marketing" | "strategy" | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportCount, setExportCount] = useState("5");
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
@@ -256,6 +259,9 @@ export default function Home() {
   useEffect(() => { setTitleDraft(settings.title); setSubtitleDraft(settings.subtitle); }, [settings.title, settings.subtitle]);
 
   const refresh = () => utils.dashboard.snapshot.invalidate();
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
+  const reportShortcutDates = useMemo(() => Array.from(new Set([today, yesterday, ...trades.map(trade => trade.buyDate)])).sort((a, b) => b.localeCompare(a)).slice(0, 6), [today, yesterday, trades]);
   const updateSettings = trpc.dashboard.updateSettings.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const deleteTrade = trpc.dashboard.deleteTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
@@ -401,6 +407,8 @@ export default function Home() {
   const exportMarketingImage = () => exportImage({ stageId: "marketing-export", captureClass: "marketing-export-capture", fileSuffix: "营销图", backgroundColor: "#f7f4ef" });
   const exportStrategyPoster = () => exportImage({ stageId: "strategy-poster", captureClass: "strategy-poster-capture", fileSuffix: "策略汇总海报", backgroundColor: "#0a0908" });
   const exportBuyReport = () => { setIsReportOpen(false); exportImage({ stageId: "buy-report", captureClass: "buy-report-capture", fileSuffix: `${reportDate.replaceAll("-", "")}-买票战报`, backgroundColor: "#080807" }); };
+  const openExportOptions = (target: "marketing" | "strategy") => { setPendingExport(target); setIsExportOptionsOpen(true); };
+  const confirmPosterExport = () => { setIsExportOptionsOpen(false); if (pendingExport === "strategy") exportStrategyPoster(); if (pendingExport === "marketing") exportMarketingImage(); };
   const resolvedExportCount = exportCount.trim().toLowerCase() === "全部" || exportCount.trim().toLowerCase() === "all" ? trades.length : Math.max(1, Math.min(trades.length, Number.parseInt(exportCount, 10) || 5));
   const exportTrades = trades.slice(0, resolvedExportCount);
 
@@ -419,7 +427,7 @@ export default function Home() {
           </div>
           <div className="topbar-actions">
             <div className="date-stack"><span><CalendarDays />统计区间</span><div><input aria-label="统计起始日期" type="date" value={settings.startDate} onChange={event => persistSetting("startDate", event.target.value)} /><em>至</em><input aria-label="统计截止日期" type="date" value={settings.endDate} onChange={event => persistSetting("endDate", event.target.value)} /></div></div>
-            <div className="export-count-control"><span>明细数量</span><input aria-label="导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="数量或全部" /><small>填写数量或“全部”</small></div><div className="export-actions"><button className="poster-export-button" onClick={exportStrategyPoster} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "策略汇总海报"}</button><button className="export-button" onClick={exportMarketingImage} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button></div>
+            <div className="export-actions"><button className="poster-export-button" onClick={() => openExportOptions("strategy")} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "策略汇总海报"}</button><button className="export-button" onClick={() => openExportOptions("marketing")} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button></div>
           </div>
         </header>
 
@@ -480,9 +488,13 @@ export default function Home() {
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent className="report-dialog">
           <DialogHeader><p className="eyebrow">Buy report</p><DialogTitle>导出买票战报</DialogTitle><DialogDescription>选择买入日期，系统将展示该日新增的前 4 支标的。</DialogDescription></DialogHeader>
-          <label className="report-date-field">买入日期<input type="date" value={reportDate} onChange={event => setReportDate(event.target.value)} /></label>
+          <label className="report-date-field">买入日期<input type="date" value={reportDate} onChange={event => setReportDate(event.target.value)} /></label><div className="report-date-shortcuts"><span>快捷日期</span><div>{reportShortcutDates.map(date => <button type="button" className={date === reportDate ? "active" : ""} key={date} onClick={() => setReportDate(date)}>{date === today ? "今天" : date === yesterday ? "昨天" : date.slice(5).replace("-", "/")}</button>)}</div></div>
           <DialogFooter><button type="button" className="import-cancel" onClick={() => setIsReportOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={exportBuyReport}><Download />导出战报</button></DialogFooter>
         </DialogContent>
+      </Dialog>
+
+      <Dialog open={isExportOptionsOpen} onOpenChange={setIsExportOptionsOpen}>
+        <DialogContent className="report-dialog export-options-dialog"><DialogHeader><p className="eyebrow">Export settings</p><DialogTitle>{pendingExport === "strategy" ? "策略汇总海报" : "导出营销图"}</DialogTitle><DialogDescription>设置导出图片中交易明细的展示数量。</DialogDescription></DialogHeader><label className="report-date-field">明细数量<input aria-label="弹窗导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="例如 5 或 全部" /></label><div className="export-count-shortcuts"><button type="button" onClick={() => setExportCount("5")}>5 条</button><button type="button" onClick={() => setExportCount("10")}>10 条</button><button type="button" onClick={() => setExportCount("全部")}>全部</button></div><DialogFooter><button type="button" className="import-cancel" onClick={() => setIsExportOptionsOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={confirmPosterExport}><Download />确认导出</button></DialogFooter></DialogContent>
       </Dialog>
 
       <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} detailTrades={exportTrades} /><StrategyPoster settings={settings} trades={trades} detailTrades={exportTrades} /><BuyReport trades={trades} reportDate={reportDate} /></div></div>

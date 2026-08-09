@@ -8,9 +8,12 @@ try {
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
   await page.locator(".metric-card").first().waitFor({ state: "visible", timeout: 20000 });
   const downloadAndVerify = async (buttonName, minHeight, maxHeight, outputPath) => {
+    await page.getByRole("button", { name: buttonName }).click();
+    const dialog = page.locator(".export-options-dialog");
+    await dialog.waitFor({ state: "visible", timeout: 10000 });
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 30000 }),
-      page.getByRole("button", { name: buttonName }).click(),
+      dialog.getByRole("button", { name: "确认导出" }).click(),
     ]);
     const filePath = await download.path();
     if (!filePath) throw new Error("未获得下载文件路径");
