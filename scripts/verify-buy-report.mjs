@@ -31,12 +31,14 @@ try {
   const iconLayout = await page.locator("#buy-report .buy-report-logic").evaluate((logic) => {
     const logicRect = logic.getBoundingClientRect();
     return Array.from(logic.querySelectorAll("article")).map((article, index) => {
-      const icon = article.querySelector("svg");
-      if (!icon) throw new Error(`第 ${index + 1} 个选股逻辑图标缺失`);
+      const iconFrame = article.querySelector(".buy-report-logic-icon");
+      const icon = iconFrame?.querySelector("svg");
+      if (!iconFrame || !icon) throw new Error(`第 ${index + 1} 个选股逻辑图标缺失`);
       const cardRect = article.getBoundingClientRect();
+      const frameRect = iconFrame.getBoundingClientRect();
       const iconRect = icon.getBoundingClientRect();
-      const safe = iconRect.width >= 80 && iconRect.height >= 80 && iconRect.left >= cardRect.left + 14 && iconRect.right <= cardRect.right - 14 && iconRect.top >= cardRect.top + 14 && iconRect.bottom <= cardRect.bottom - 14 && cardRect.left >= logicRect.left && cardRect.right <= logicRect.right;
-      return { index, safe, iconWidth: Math.round(iconRect.width), iconHeight: Math.round(iconRect.height) };
+      const safe = frameRect.width >= 92 && frameRect.height >= 92 && iconRect.width >= 68 && iconRect.height >= 68 && frameRect.left >= cardRect.left + 14 && frameRect.right <= cardRect.right - 14 && frameRect.top >= cardRect.top + 14 && frameRect.bottom <= cardRect.bottom - 14 && icon.getAttribute("viewBox") === "-2 -2 28 28" && cardRect.left >= logicRect.left && cardRect.right <= logicRect.right;
+      return { index, safe, frameWidth: Math.round(frameRect.width), frameHeight: Math.round(frameRect.height), iconWidth: Math.round(iconRect.width), iconHeight: Math.round(iconRect.height), viewBox: icon.getAttribute("viewBox") };
     });
   });
   if (iconLayout.some(icon => !icon.safe)) throw new Error(`选股逻辑图标尺寸或裁切异常：${JSON.stringify(iconLayout)}`);

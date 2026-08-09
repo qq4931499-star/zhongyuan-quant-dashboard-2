@@ -228,7 +228,7 @@ function BuyReport({ trades, reportDate }: { trades: QuantTrade[]; reportDate: s
     <section id="buy-report" data-export-stage aria-hidden="true">
       <header className="buy-report-header"><BrandLogo exportMode src={POSTER_WHITE_LOGO_URL} /><p>ZHONGYUAN QUANTITATIVE</p><h1>今日买票战报</h1><time>{reportDate.replaceAll("-", ".")}</time><strong>中圆量化智能决策系统</strong></header>
       {selectedTrades.length === 0 ? <div className="buy-report-empty">该日期暂无新增交易明细</div> : <div className={`buy-report-grid buy-report-count-${selectedTrades.length}`}>{selectedTrades.map((trade, index) => <article className="buy-report-card" key={trade.id}><span className="buy-report-badge">标的{["一", "二", "三", "四"][index]}</span><h2>{trade.stockName} <small>/ {trade.symbol}</small></h2><dl><div><dt>买入价格</dt><dd>{trade.buyPrice.toFixed(2)}</dd></div><div><dt>买入日期</dt><dd>{trade.buyDate}</dd></div><div><dt>卖出价格</dt><dd>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</dd></div><div><dt>卖出日期</dt><dd>{trade.sellDate ?? "-----"}</dd></div></dl></article>)}</div>}
-      <section className="buy-report-logic"><span>系统选股逻辑</span><div>{logicItems.map(({ label, Icon }) => <article key={label}><Icon /><b>{label}</b></article>)}</div></section>
+      <section className="buy-report-logic"><span>系统选股逻辑</span><div>{logicItems.map(({ label, Icon }) => <article key={label}><span className="buy-report-logic-icon" aria-hidden="true"><Icon strokeWidth={1.7} viewBox="-2 -2 28 28" /></span><b>{label}</b></article>)}</div></section>
       <footer className="buy-report-footer"><strong>量行致远 · 衡守初心</strong><span>数据仅供策略研究与交流，不构成任何投资建议</span></footer>
     </section>
   );
