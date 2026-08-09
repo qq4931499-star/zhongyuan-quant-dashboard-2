@@ -182,6 +182,40 @@ function MarketingExport({ settings, trades }: { settings: Settings; trades: Qua
   );
 }
 
+function StrategyPoster({ settings, trades }: { settings: Settings; trades: QuantTrade[] }) {
+  const metrics = calculateDashboardMetrics(trades);
+  const profitableTrades = trades.filter(trade => getTradeReturn(trade) > 0).length;
+  const winRate = trades.length > 0 ? profitableTrades / trades.length : 0;
+  const minReturn = trades.length > 0 ? Math.min(...trades.map(getTradeReturn)) : 0;
+  const cards = [
+    { value: formatPercent(metrics.finalCumulativeReturn), label: "累计收益" },
+    { value: `${metrics.totalTrades}只`, label: "交易股票数量" },
+    { value: `${profitableTrades}只`, label: "盈利股票数量" },
+    { value: formatPercent(winRate), label: "胜率" },
+    { value: formatPercent(metrics.maximumReturn), label: "最高单笔收益" },
+  ];
+  return (
+    <section id="strategy-poster" data-export-stage aria-hidden="true">
+      <div className="poster-hero">
+        <div className="poster-hero-grid" />
+        <div className="poster-orbits"><i /><i /><i /><b>中圆</b></div>
+        <div className="poster-brand"><BrandLogo exportMode /><span>公开协作 · 量化策略复盘</span></div>
+        <div className="poster-period"><span>统计周期</span><strong>{settings.startDate.replaceAll("-", ".")} - {settings.endDate.replaceAll("-", ".")}</strong></div>
+        <div className="poster-heading"><p>ZHONGYUAN QUANTITATIVE</p><h1>中圆量化<br />{settings.startDate.slice(0, 4)}年{Number(settings.startDate.slice(5, 7))}月策略执行汇总</h1><small>{settings.subtitle || "（T+1操作）"}</small></div>
+      </div>
+      <div className="poster-metrics">{cards.map(card => <div className="poster-metric" key={card.label}><strong>{card.value}</strong><span>{card.label}</span></div>)}</div>
+      <div className="poster-ledger">
+        <div className="poster-ledger-heading"><span>交易明细</span><b>（T+1交易策略 · 当前记录收益区间 {formatPercent(minReturn)} — {formatPercent(metrics.maximumReturn)}）</b></div>
+        <table className="poster-trade-table">
+          <thead><tr><th>序列</th><th>股票名称</th><th>股票代码</th><th>买入价格</th><th>买入时间</th><th>卖出价格</th><th>卖出时间</th><th>收益率</th></tr></thead>
+          <tbody>{trades.slice(0, 5).map((trade, index) => <tr key={trade.id}><td>{index + 1}</td><td>{trade.stockName}</td><td>{trade.symbol}</td><td>{trade.buyPrice.toFixed(2)}</td><td>{trade.buyDate}</td><td>{trade.sellPrice.toFixed(2)}</td><td>{trade.sellDate}</td><td className={getTradeReturn(trade) >= 0 ? "poster-positive" : "poster-negative"}>{formatPercent(getTradeReturn(trade))}</td></tr>)}</tbody>
+        </table>
+      </div>
+      <footer className="poster-footer"><strong>量行致远 · 衡守初心</strong><span>中圆量化，以数据洞察市场，以模型辅助研判，以风控守护每一次决策。</span></footer>
+    </section>
+  );
+}
+
 export default function Home() {
   const utils = trpc.useUtils();
   const { data: snapshot, isLoading, isError } = trpc.dashboard.snapshot.useQuery(undefined, { refetchInterval: 5000, refetchOnWindowFocus: true });
@@ -286,8 +320,8 @@ export default function Home() {
     }
   };
 
-  const exportMarketingImage = async () => {
-    const sourceStage = exportRef.current?.querySelector<HTMLElement>("#marketing-export");
+  const exportImage = async ({ stageId, captureClass, fileSuffix, backgroundColor }: { stageId: string; captureClass: string; fileSuffix: string; backgroundColor: string }) => {
+    const sourceStage = exportRef.current?.querySelector<HTMLElement>(`#${stageId}`);
     if (!sourceStage) {
       toast.error("营销图画布尚未准备完成");
       return;
@@ -297,8 +331,8 @@ export default function Home() {
     try {
       const logoDataUrl = await loadImageAsDataUrl(BRAND_LOGO_URL);
       const captureStage = sourceStage.cloneNode(true) as HTMLElement;
-      captureStage.id = "marketing-export-capture";
-      captureStage.classList.add("marketing-export-capture");
+      captureStage.id = `${stageId}-capture`;
+      captureStage.classList.add(captureClass);
       captureStage.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
       Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", pointerEvents: "none", overflow: "hidden" });
       captureHost.appendChild(captureStage);
@@ -308,9 +342,9 @@ export default function Home() {
       const captureHeight = Math.ceil(captureStage.scrollHeight);
       if (captureHeight < 500) throw new Error("营销图内容高度异常");
       const canvas = await html2canvas(captureStage, {
-        backgroundColor: "#f7f4ef", useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: captureHeight, windowWidth: 1080, windowHeight: captureHeight,
+        backgroundColor, useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: captureHeight, windowWidth: 1080, windowHeight: captureHeight,
         onclone: clonedDocument => {
-          const clonedStage = clonedDocument.querySelector<HTMLElement>("#marketing-export-capture");
+          const clonedStage = clonedDocument.querySelector<HTMLElement>(`.${captureClass}`);
           if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0" });
           clonedDocument.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
         },
@@ -320,12 +354,14 @@ export default function Home() {
       if (blob.size < 10_000) throw new Error("生成的图片数据异常，请重试");
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
-      link.href = url; link.download = `${settings.title.replace(/[\\/:*?"<>|]/g, "-")}-营销图.png`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-      toast.success("营销图已下载", { description: `1080 × ${captureHeight} PNG 已生成。` });
+      link.href = url; link.download = `${settings.title.replace(/[\\/:*?"<>|]/g, "-")}-${fileSuffix}.png`; document.body.appendChild(link); link.click(); link.remove(); window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      toast.success(`${fileSuffix}已下载`, { description: `1080 × ${captureHeight} PNG 已生成。` });
     } catch (error) {
       toast.error("导出失败", { description: error instanceof Error ? error.message : "请稍后重试" });
     } finally { captureHost.remove(); setIsExporting(false); }
   };
+  const exportMarketingImage = () => exportImage({ stageId: "marketing-export", captureClass: "marketing-export-capture", fileSuffix: "营销图", backgroundColor: "#f7f4ef" });
+  const exportStrategyPoster = () => exportImage({ stageId: "strategy-poster", captureClass: "strategy-poster-capture", fileSuffix: "策略汇总海报", backgroundColor: "#0a0908" });
 
   if (isLoading) return <main className="loading-screen"><Loader2 className="spin" /><span>正在连接收益数据…</span></main>;
   if (isError) return <main className="loading-screen"><span>数据暂时不可用，请刷新页面后重试。</span></main>;
@@ -342,7 +378,7 @@ export default function Home() {
           </div>
           <div className="topbar-actions">
             <label className="date-input"><CalendarDays /><span>统计区间</span><input aria-label="统计起始日期" type="date" value={settings.startDate} onChange={event => persistSetting("startDate", event.target.value)} /><em>至</em><input aria-label="统计截止日期" type="date" value={settings.endDate} onChange={event => persistSetting("endDate", event.target.value)} /></label>
-            <button className="export-button" onClick={exportMarketingImage} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button>
+            <div className="export-actions"><button className="poster-export-button" onClick={exportStrategyPoster} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "策略汇总海报"}</button><button className="export-button" onClick={exportMarketingImage} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button></div>
           </div>
         </header>
 
@@ -400,7 +436,7 @@ export default function Home() {
         </DialogContent>
       </Dialog>
 
-      <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} /></div></div>
+      <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} /><StrategyPoster settings={settings} trades={trades} /></div></div>
     </main>
   );
 }
