@@ -9,6 +9,8 @@ import { toast } from "sonner";
 import { read, utils as xlsxUtils, writeFile } from "xlsx";
 
 const BRAND_LOGO_URL = "/manus-storage/zhongyuan-company-logo_05345835.png";
+const POSTER_WHITE_LOGO_URL = "/manus-storage/zhongyuan-logo-white_e5733281.png";
+const POSTER_BACKGROUND_URL = "/manus-storage/strategy-poster-gold-city_c278d7e4.png";
 
 const DEFAULT_SETTINGS = {
   title: "中圆量化 月度收益走势",
@@ -75,10 +77,10 @@ function parseImportRecords(records: Record<string, unknown>[]) {
   return { rows, issues };
 }
 
-function BrandLogo({ exportMode = false }: { exportMode?: boolean }) {
+function BrandLogo({ exportMode = false, src = BRAND_LOGO_URL }: { exportMode?: boolean; src?: string }) {
   return (
     <div className={`brand-logo ${exportMode ? "brand-logo-export" : ""}`}>
-      <img data-export-logo src={BRAND_LOGO_URL} alt="中圆公司标志" />
+      <img data-export-logo={src} src={src} alt="中圆公司标志" />
     </div>
   );
 }
@@ -199,7 +201,7 @@ function StrategyPoster({ settings, trades }: { settings: Settings; trades: Quan
       <div className="poster-hero">
         <div className="poster-hero-grid" />
         <div className="poster-orbits"><i /><i /><i /><b>中圆</b></div>
-        <div className="poster-brand"><BrandLogo exportMode /><span>公开协作 · 量化策略复盘</span></div>
+        <div className="poster-brand"><BrandLogo exportMode src={POSTER_WHITE_LOGO_URL} /><span>公开协作 · 量化策略复盘</span></div>
         <div className="poster-period"><span>统计周期</span><strong>{settings.startDate.replaceAll("-", ".")} - {settings.endDate.replaceAll("-", ".")}</strong></div>
         <div className="poster-heading"><p>ZHONGYUAN QUANTITATIVE</p><h1>中圆量化<br />{settings.startDate.slice(0, 4)}年{Number(settings.startDate.slice(5, 7))}月策略执行汇总</h1><small>{settings.subtitle || "（T+1操作）"}</small></div>
       </div>
@@ -329,11 +331,24 @@ export default function Home() {
     setIsExporting(true);
     const captureHost = document.createElement("div");
     try {
-      const logoDataUrl = await loadImageAsDataUrl(BRAND_LOGO_URL);
+      const logoUrls = Array.from(new Set(Array.from(sourceStage.querySelectorAll<HTMLImageElement>("[data-export-logo]")).map(image => image.dataset.exportLogo ?? BRAND_LOGO_URL)));
+      const assetUrls = stageId === "strategy-poster" ? [...logoUrls, POSTER_BACKGROUND_URL] : logoUrls;
+      const assetDataUrls = new Map(await Promise.all(assetUrls.map(async url => [url, await loadImageAsDataUrl(url)] as const)));
+      const applyExportAssets = (stage: HTMLElement) => {
+        stage.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = assetDataUrls.get(image.dataset.exportLogo ?? BRAND_LOGO_URL) ?? image.src; });
+        const hero = stage.querySelector<HTMLElement>(".poster-hero");
+        const posterBackground = assetDataUrls.get(POSTER_BACKGROUND_URL);
+        if (hero && posterBackground) {
+          hero.style.backgroundImage = `linear-gradient(180deg, rgba(4,4,3,.08), rgba(18,10,4,.56)), url("${posterBackground}")`;
+          hero.style.backgroundPosition = "center, center";
+          hero.style.backgroundRepeat = "no-repeat, no-repeat";
+          hero.style.backgroundSize = "auto, cover";
+        }
+      };
       const captureStage = sourceStage.cloneNode(true) as HTMLElement;
       captureStage.id = `${stageId}-capture`;
       captureStage.classList.add(captureClass);
-      captureStage.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
+      applyExportAssets(captureStage);
       Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", pointerEvents: "none", overflow: "hidden" });
       captureHost.appendChild(captureStage);
       document.body.appendChild(captureHost);
@@ -346,7 +361,7 @@ export default function Home() {
         onclone: clonedDocument => {
           const clonedStage = clonedDocument.querySelector<HTMLElement>(`.${captureClass}`);
           if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0" });
-          clonedDocument.querySelectorAll<HTMLImageElement>("[data-export-logo]").forEach(image => { image.src = logoDataUrl; });
+          if (clonedStage) applyExportAssets(clonedStage);
         },
       });
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
@@ -377,7 +392,7 @@ export default function Home() {
             <input aria-label="副标题" className="subtitle-input" value={subtitleDraft} maxLength={120} onChange={event => setSubtitleDraft(event.target.value)} onBlur={event => persistSetting("subtitle", event.target.value)} />
           </div>
           <div className="topbar-actions">
-            <label className="date-input"><CalendarDays /><span>统计区间</span><input aria-label="统计起始日期" type="date" value={settings.startDate} onChange={event => persistSetting("startDate", event.target.value)} /><em>至</em><input aria-label="统计截止日期" type="date" value={settings.endDate} onChange={event => persistSetting("endDate", event.target.value)} /></label>
+            <div className="date-stack"><span><CalendarDays />统计区间</span><div><input aria-label="统计起始日期" type="date" value={settings.startDate} onChange={event => persistSetting("startDate", event.target.value)} /><em>至</em><input aria-label="统计截止日期" type="date" value={settings.endDate} onChange={event => persistSetting("endDate", event.target.value)} /></div></div>
             <div className="export-actions"><button className="poster-export-button" onClick={exportStrategyPoster} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "策略汇总海报"}</button><button className="export-button" onClick={exportMarketingImage} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button></div>
           </div>
         </header>
