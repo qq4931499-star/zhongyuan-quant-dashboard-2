@@ -36,15 +36,15 @@ export const dashboardSettings = mysqlTable("dashboardSettings", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
-/** A public, editable record of an individual completed trade. */
+/** A public, editable record of an individual trade; sell fields are null while a position remains open. */
 export const trades = mysqlTable("trades", {
   id: int("id").autoincrement().primaryKey(),
   symbol: varchar("symbol", { length: 32 }).notNull(),
   stockName: varchar("stockName", { length: 80 }).notNull(),
   buyPrice: double("buyPrice").notNull(),
-  sellPrice: double("sellPrice").notNull(),
+  sellPrice: double("sellPrice"),
   buyDate: varchar("buyDate", { length: 10 }).notNull(),
-  sellDate: varchar("sellDate", { length: 10 }).notNull(),
+  sellDate: varchar("sellDate", { length: 10 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

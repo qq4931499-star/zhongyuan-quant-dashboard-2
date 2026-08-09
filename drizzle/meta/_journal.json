@@ -15,6 +15,13 @@
       "when": 1786211624802,
       "tag": "0001_lush_stepford_cuckoos",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1786302398151,
+      "tag": "0002_neat_vampiro",
+      "breakpoints": true
     }
   ]
 }

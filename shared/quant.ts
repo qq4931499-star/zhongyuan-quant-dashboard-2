@@ -3,9 +3,9 @@ export type QuantTrade = {
   symbol: string;
   stockName: string;
   buyPrice: number;
-  sellPrice: number;
+  sellPrice: number | null;
   buyDate: string;
-  sellDate: string;
+  sellDate: string | null;
 };
 
 export type TrendPoint = {
@@ -24,19 +24,22 @@ export type DashboardMetrics = {
   finalCumulativeReturn: number;
 };
 
+export const isRealizedTrade = (trade: Pick<QuantTrade, "sellPrice" | "sellDate">) =>
+  typeof trade.sellPrice === "number" && Boolean(trade.sellDate);
+
 export const getTradeReturn = (trade: Pick<QuantTrade, "buyPrice" | "sellPrice">) =>
-  trade.buyPrice > 0 ? (trade.sellPrice - trade.buyPrice) / trade.buyPrice : 0;
+  trade.buyPrice > 0 && typeof trade.sellPrice === "number" ? (trade.sellPrice - trade.buyPrice) / trade.buyPrice : 0;
 
 export function calculateTrend(trades: QuantTrade[]): TrendPoint[] {
   let cumulativeReturn = 0;
-  return [...trades]
-    .sort((a, b) => a.sellDate.localeCompare(b.sellDate) || a.id - b.id)
+  return trades.filter(isRealizedTrade)
+    .sort((a, b) => a.sellDate!.localeCompare(b.sellDate!) || a.id - b.id)
     .map(trade => {
       const returnRate = getTradeReturn(trade);
       cumulativeReturn += returnRate;
       return {
         id: trade.id,
-        date: trade.sellDate,
+        date: trade.sellDate!,
         symbol: trade.symbol,
         returnRate,
         cumulativeReturn,
@@ -45,11 +48,12 @@ export function calculateTrend(trades: QuantTrade[]): TrendPoint[] {
 }
 
 export function calculateDashboardMetrics(trades: QuantTrade[]): DashboardMetrics {
-  const returns = trades.map(getTradeReturn);
-  const trend = calculateTrend(trades);
-  const totalProfit = trades.reduce((sum, trade) => sum + trade.sellPrice - trade.buyPrice, 0);
+  const realizedTrades = trades.filter(isRealizedTrade);
+  const returns = realizedTrades.map(getTradeReturn);
+  const trend = calculateTrend(realizedTrades);
+  const totalProfit = realizedTrades.reduce((sum, trade) => sum + trade.sellPrice! - trade.buyPrice, 0);
   return {
-    totalTrades: trades.length,
+    totalTrades: realizedTrades.length,
     totalProfit,
     averageReturn: returns.length ? returns.reduce((sum, value) => sum + value, 0) / returns.length : 0,
     maximumReturn: returns.length ? Math.max(...returns) : 0,
@@ -61,4 +65,3 @@ export const formatPercent = (value: number, digits = 2) => `${(value * 100).toF
 
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(value);
-

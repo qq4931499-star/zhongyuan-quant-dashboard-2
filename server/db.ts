@@ -130,7 +130,7 @@ async function ensureDashboardSeed() {
 export async function getDashboardSnapshot() {
   const db = await ensureDashboardSeed();
   const [settings] = await db.select().from(dashboardSettings).where(eq(dashboardSettings.id, 1)).limit(1);
-  const records = await db.select().from(trades).orderBy(asc(trades.sellDate), asc(trades.id));
+  const records = await db.select().from(trades).orderBy(asc(trades.buyDate), asc(trades.id));
   return { settings, trades: records };
 }
 
@@ -176,9 +176,9 @@ export async function bulkImportTrades(values: ImportTrade[]) {
   } as const;
 }
 
-export async function updateTrade(id: number, values: Partial<InsertTrade>) {
+export async function updateTrade(id: number, values: Partial<InsertTrade> & { sellPrice?: number | null; sellDate?: string | null }) {
   const db = await ensureDashboardSeed();
-  await db.update(trades).set(values).where(eq(trades.id, id));
+  await db.update(trades).set(values as Partial<InsertTrade>).where(eq(trades.id, id));
   const [record] = await db.select().from(trades).where(eq(trades.id, id)).limit(1);
   return record;
 }

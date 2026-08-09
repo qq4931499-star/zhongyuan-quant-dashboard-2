@@ -30,6 +30,15 @@ describe("量化收益计算", () => {
     });
   });
 
+  it("将卖出字段为空的未平仓交易保留在原始记录中，但排除已实现收益指标与趋势", () => {
+    const openTrade: QuantTrade = { id: 4, symbol: "OPEN.POS", stockName: "未平仓样例", buyPrice: 50, sellPrice: null, buyDate: "2026-05-10", sellDate: null };
+    const allTrades = [...sampleTrades, openTrade];
+
+    expect(getTradeReturn(openTrade)).toBe(0);
+    expect(calculateTrend(allTrades).map(point => point.id)).not.toContain(openTrade.id);
+    expect(calculateDashboardMetrics(allTrades)).toMatchObject({ totalTrades: 2, totalProfit: -10, finalCumulativeReturn: 0 });
+  });
+
   it("在没有交易时返回零值指标", () => {
     expect(calculateDashboardMetrics([])).toEqual({
       totalTrades: 0,

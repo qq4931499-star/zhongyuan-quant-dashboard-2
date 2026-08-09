@@ -32,4 +32,13 @@ describe("交易批量导入去重", () => {
     expect(result.issues[1]?.messages.join(" ")).toContain("卖出价必须大于 0");
     expect(result.issues[1]?.messages.join(" ")).toContain("日期不是有效的日历日期");
   });
+
+  it("允许卖出价格和卖出日期同时留空，并为未平仓记录生成稳定去重键", () => {
+    const openTrade: ImportTrade = { ...existing, symbol: "300750.SZ", stockName: "宁德时代", sellPrice: null, sellDate: null };
+    const validation = validateTradeImportRows([openTrade]);
+
+    expect(validation.issues).toHaveLength(0);
+    expect(validation.rows[0]).toMatchObject({ sellPrice: null, sellDate: null });
+    expect(dedupeImportedTrades([openTrade, { ...openTrade, stockName: "名称改变不影响去重" }], [openTrade]).duplicateIndexes).toEqual([0, 1]);
+  });
 });

@@ -17,9 +17,9 @@ export const tradeImportRowSchema = z.object({
   symbol: z.string().trim().min(1, "股票代码不能为空").max(32, "股票代码不得超过 32 个字符").transform(value => value.toUpperCase()),
   stockName: z.string().trim().min(1, "股票名称不能为空").max(80, "股票名称不得超过 80 个字符"),
   buyPrice: z.number().positive("买入价必须大于 0"),
-  sellPrice: z.number().positive("卖出价必须大于 0"),
+  sellPrice: z.number().positive("卖出价必须大于 0").nullable().optional().transform(value => value ?? null),
   buyDate: importDateSchema,
-  sellDate: importDateSchema,
+  sellDate: importDateSchema.nullable().optional().transform(value => value ?? null),
 });
 
 export function validateTradeImportRows(candidates: unknown[]) {
@@ -37,7 +37,7 @@ export function validateTradeImportRows(candidates: unknown[]) {
 }
 
 export function getTradeImportKey(trade: ImportTrade) {
-  return [trade.symbol.trim().toUpperCase(), trade.buyPrice, trade.sellPrice, trade.buyDate, trade.sellDate].join("|");
+  return [trade.symbol.trim().toUpperCase(), trade.buyPrice, trade.sellPrice ?? "", trade.buyDate, trade.sellDate ?? ""].join("|");
 }
 
 export function dedupeImportedTrades(candidates: ImportTrade[], existing: ImportTrade[]) {
