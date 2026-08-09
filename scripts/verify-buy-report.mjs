@@ -35,7 +35,7 @@ try {
       if (!icon) throw new Error(`第 ${index + 1} 个选股逻辑图标缺失`);
       const cardRect = article.getBoundingClientRect();
       const iconRect = icon.getBoundingClientRect();
-      const safe = iconRect.width >= 60 && iconRect.height >= 60 && iconRect.left >= cardRect.left + 8 && iconRect.right <= cardRect.right - 8 && iconRect.top >= cardRect.top + 8 && iconRect.bottom <= cardRect.bottom - 8 && cardRect.left >= logicRect.left && cardRect.right <= logicRect.right;
+      const safe = iconRect.width >= 80 && iconRect.height >= 80 && iconRect.left >= cardRect.left + 14 && iconRect.right <= cardRect.right - 14 && iconRect.top >= cardRect.top + 14 && iconRect.bottom <= cardRect.bottom - 14 && cardRect.left >= logicRect.left && cardRect.right <= logicRect.right;
       return { index, safe, iconWidth: Math.round(iconRect.width), iconHeight: Math.round(iconRect.height) };
     });
   });
