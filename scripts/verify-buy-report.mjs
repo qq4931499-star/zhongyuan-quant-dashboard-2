@@ -16,6 +16,18 @@ try {
   await page.locator("#buy-report .buy-report-card").first().waitFor({ state: "attached", timeout: 5000 });
   const logicIcons = await page.locator("#buy-report .buy-report-logic article svg").count();
   if (logicIcons !== 4) throw new Error(`选股逻辑图标数量异常：${logicIcons}`);
+  const iconLayout = await page.locator("#buy-report .buy-report-logic").evaluate((logic) => {
+    const logicRect = logic.getBoundingClientRect();
+    return Array.from(logic.querySelectorAll("article")).map((article, index) => {
+      const icon = article.querySelector("svg");
+      if (!icon) throw new Error(`第 ${index + 1} 个选股逻辑图标缺失`);
+      const cardRect = article.getBoundingClientRect();
+      const iconRect = icon.getBoundingClientRect();
+      const safe = iconRect.width >= 60 && iconRect.height >= 60 && iconRect.left >= cardRect.left + 8 && iconRect.right <= cardRect.right - 8 && iconRect.top >= cardRect.top + 8 && iconRect.bottom <= cardRect.bottom - 8 && cardRect.left >= logicRect.left && cardRect.right <= logicRect.right;
+      return { index, safe, iconWidth: Math.round(iconRect.width), iconHeight: Math.round(iconRect.height) };
+    });
+  });
+  if (iconLayout.some(icon => !icon.safe)) throw new Error(`选股逻辑图标尺寸或裁切异常：${JSON.stringify(iconLayout)}`);
   const [download] = await Promise.all([
     page.waitForEvent("download", { timeout: 30000 }),
     dialog.getByRole("button", { name: "导出战报" }).click(),
@@ -44,7 +56,7 @@ try {
   });
   const expected = [1, 2, 3, 2];
   if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`买票战报标的布局异常：${JSON.stringify(layouts)}`);
-  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts }));
+  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout }));
 } finally {
   await browser.close();
 }
