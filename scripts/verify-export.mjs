@@ -13,12 +13,21 @@ try {
     await dialog.waitFor({ state: "visible", timeout: 10000 });
     const dialogLayout = await dialog.evaluate((element) => {
       const overlay = document.querySelector('[data-slot="dialog-overlay"]');
+      const close = element.querySelector('[data-slot="dialog-close"]');
+      const footer = element.querySelector('[data-slot="dialog-footer"]');
+      const buttons = Array.from(element.querySelectorAll('[data-slot="dialog-footer"] button'));
+      const selectedShortcut = element.querySelector('.export-count-shortcuts button.active');
+      if (!close || !footer || buttons.length !== 2 || !selectedShortcut) throw new Error("导出设置弹窗关键操作控件缺失");
       const style = getComputedStyle(element);
       const overlayStyle = overlay ? getComputedStyle(overlay) : null;
       const rect = element.getBoundingClientRect();
-      return { position: style.position, zIndex: style.zIndex, top: rect.top, overlayPosition: overlayStyle?.position, overlayZIndex: overlayStyle?.zIndex };
+      const closeRect = close.getBoundingClientRect();
+      const footerRect = footer.getBoundingClientRect();
+      const buttonRects = buttons.map(button => button.getBoundingClientRect());
+      const safe = rect.left >= 10 && rect.right <= window.innerWidth - 10 && rect.top >= 10 && rect.bottom <= window.innerHeight - 10 && closeRect.right <= rect.right - 10 && closeRect.top >= rect.top + 10 && footerRect.top > rect.top + rect.height * .5 && buttonRects.every(button => button.height >= 44);
+      return { position: style.position, zIndex: style.zIndex, top: rect.top, overlayPosition: overlayStyle?.position, overlayZIndex: overlayStyle?.zIndex, safe, buttonHeights: buttonRects.map(button => Math.round(button.height)) };
     });
-    if (dialogLayout.position !== "fixed" || dialogLayout.overlayPosition !== "fixed" || Number(dialogLayout.zIndex) < 1001 || Number(dialogLayout.overlayZIndex) < 1000) throw new Error(`导出设置弹窗未正确覆盖页面：${JSON.stringify(dialogLayout)}`);
+    if (dialogLayout.position !== "fixed" || dialogLayout.overlayPosition !== "fixed" || Number(dialogLayout.zIndex) < 1001 || Number(dialogLayout.overlayZIndex) < 1000 || !dialogLayout.safe) throw new Error(`导出设置弹窗布局或层级异常：${JSON.stringify(dialogLayout)}`);
     const [download] = await Promise.all([
       page.waitForEvent("download", { timeout: 30000 }),
       dialog.getByRole("button", { name: "确认导出" }).click(),

@@ -10,6 +10,18 @@ try {
   await page.getByRole("button", { name: "买票战报" }).click();
   const dialog = page.locator(".report-dialog");
   await dialog.waitFor({ state: "visible", timeout: 20000 });
+  const dialogLayout = await dialog.evaluate((element) => {
+    const close = element.querySelector('[data-slot="dialog-close"]');
+    const footer = element.querySelector('[data-slot="dialog-footer"]');
+    const buttons = Array.from(element.querySelectorAll('[data-slot="dialog-footer"] button'));
+    if (!close || !footer || buttons.length !== 2) throw new Error("买票战报弹窗关键操作控件缺失");
+    const rect = element.getBoundingClientRect();
+    const closeRect = close.getBoundingClientRect();
+    const buttonRects = buttons.map(button => button.getBoundingClientRect());
+    const safe = rect.left >= 10 && rect.right <= window.innerWidth - 10 && rect.top >= 10 && rect.bottom <= window.innerHeight - 10 && closeRect.right <= rect.right - 10 && closeRect.top >= rect.top + 10 && buttonRects.every(button => button.height >= 44);
+    return { safe, closeWidth: Math.round(closeRect.width), buttonHeights: buttonRects.map(button => Math.round(button.height)) };
+  });
+  if (!dialogLayout.safe) throw new Error(`买票战报弹窗布局异常：${JSON.stringify(dialogLayout)}`);
   const shortcutCount = await dialog.locator(".report-date-shortcuts button").count();
   if (shortcutCount < 2) throw new Error("买票战报缺少日期快捷选项");
   await dialog.locator('input[type="date"]').fill(firstBuyDate);
@@ -56,7 +68,7 @@ try {
   });
   const expected = [1, 2, 3, 2];
   if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`买票战报标的布局异常：${JSON.stringify(layouts)}`);
-  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout }));
+  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout }));
 } finally {
   await browser.close();
 }
