@@ -65,6 +65,7 @@ const trpcClient = trpc.createClient({
       fetch(input, init) {
         return globalThis.fetch(input, {
           ...(init ?? {}),
+          cache: "no-store",
           credentials: "include",
         });
       },

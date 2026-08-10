@@ -225,8 +225,9 @@ function StrategyPoster({ settings, trades, detailTrades }: { settings: Settings
   );
 }
 
-function BuyReport({ trades, reportDate }: { trades: QuantTrade[]; reportDate: string }) {
-  const selectedTrades = trades.filter(trade => trade.buyDate.startsWith(reportDate)).slice(0, 4);
+function BuyReport({ trades, reportDate, selectedTradeIds }: { trades: QuantTrade[]; reportDate: string; selectedTradeIds: number[] }) {
+  const manuallySelectedTrades = trades.filter(trade => selectedTradeIds.includes(trade.id));
+  const selectedTrades = (manuallySelectedTrades.length > 0 ? manuallySelectedTrades : trades.filter(trade => trade.buyDate.startsWith(reportDate))).slice(0, 4);
   const logicItems = [{ label: "趋势识别", Icon: TrendingUp }, { label: "资金行为", Icon: CircleDollarSign }, { label: "多因子共振", Icon: Sparkles }, { label: "风险过滤", Icon: ShieldCheck }];
   return (
     <section id="buy-report" data-export-stage aria-hidden="true">
@@ -254,6 +255,8 @@ export default function Home() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportCount, setExportCount] = useState("5");
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [selectedReportTradeIds, setSelectedReportTradeIds] = useState<number[]>([]);
+  const [timeDrafts, setTimeDrafts] = useState<Record<number, { buyDate: string; sellDate: string }>>({});
   const [importRows, setImportRows] = useState<ImportTrade[]>([]);
   const [importIssues, setImportIssues] = useState<ImportIssue[]>([]);
   const [importFileName, setImportFileName] = useState("");
@@ -261,6 +264,10 @@ export default function Home() {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { setTitleDraft(settings.title); setSubtitleDraft(settings.subtitle); }, [settings.title, settings.subtitle]);
+  useEffect(() => setSelectedReportTradeIds(previous => {
+    const available = previous.filter(id => trades.some(trade => trade.id === id));
+    return available.length === previous.length ? previous : available;
+  }), [trades]);
 
   const refresh = () => utils.dashboard.snapshot.invalidate();
   const today = new Date().toISOString().slice(0, 10);
@@ -288,6 +295,27 @@ export default function Home() {
     }
     if (value !== trade[field]) updateTrade.mutate({ id: trade.id, values: { [field]: value } });
   };
+  const getTimeDraft = (trade: QuantTrade) => timeDrafts[trade.id] ?? { buyDate: trade.buyDate.replace(" ", "T"), sellDate: trade.sellDate?.replace(" ", "T") ?? "" };
+  const updateTimeDraft = (trade: QuantTrade, field: "buyDate" | "sellDate", value: string) => setTimeDrafts(previous => ({ ...previous, [trade.id]: { ...getTimeDraft(trade), ...previous[trade.id], [field]: value } }));
+  const hasTimeChanges = (trade: QuantTrade) => { const draft = getTimeDraft(trade); return draft.buyDate !== trade.buyDate.replace(" ", "T") || draft.sellDate !== (trade.sellDate?.replace(" ", "T") ?? ""); };
+  const confirmTradeTimes = (trade: QuantTrade) => {
+    const draft = getTimeDraft(trade);
+    const buyDate = normalizeTradeDateTime(draft.buyDate);
+    const sellDate = draft.sellDate.trim() ? normalizeTradeDateTime(draft.sellDate) : null;
+    if (!buyDate || (draft.sellDate.trim() && !sellDate)) { toast.error("请填写有效的年-月-日时分"); return; }
+    updateTrade.mutate({ id: trade.id, values: { buyDate, sellDate } }, { onSuccess: updated => {
+      utils.dashboard.snapshot.setData(undefined, snapshot => snapshot ? { ...snapshot, trades: snapshot.trades.map(item => item.id === trade.id ? { ...item, buyDate: updated.buyDate, sellDate: updated.sellDate } : item) } : snapshot);
+      setTimeDrafts(previous => { const { [trade.id]: _, ...rest } = previous; return rest; });
+      void refresh();
+      toast.success(`${trade.symbol} 时间已确认`);
+    } });
+  };
+  const toggleReportTrade = (tradeId: number, checked: boolean) => setSelectedReportTradeIds(previous => {
+    if (!checked) return previous.filter(id => id !== tradeId);
+    if (previous.includes(tradeId)) return previous;
+    if (previous.length >= 4) { toast.error("今日策略战报最多选择 4 条交易"); return previous; }
+    return [...previous, tradeId];
+  });
 
   const addTrade = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -454,23 +482,25 @@ export default function Home() {
           </div>
           <div className="table-scroll">
             <table className="trade-table">
-              <thead><tr><th>序号</th><th>股票代码</th><th>股票名称</th><th>买入价</th><th>卖出价</th><th>买入时间</th><th>卖出时间</th><th>单笔收益率</th><th aria-label="操作" /></tr></thead>
+              <thead><tr><th aria-label="选择战报数据">勾选</th><th>序号</th><th>股票代码</th><th>股票名称</th><th>买入价</th><th>卖出价</th><th>买入时间</th><th>卖出时间</th><th>确认</th><th>单笔收益率</th><th aria-label="操作" /></tr></thead>
               <tbody>
-                {trades.length === 0 ? <tr><td colSpan={9}><div className="table-empty"><TrendingUp /><span>暂无交易记录</span><button onClick={() => setIsModalOpen(true)}>新增第一笔交易</button></div></td></tr> : trades.map((trade, index) => <tr key={trade.id}>
+                {trades.length === 0 ? <tr><td colSpan={11}><div className="table-empty"><TrendingUp /><span>暂无交易记录</span><button onClick={() => setIsModalOpen(true)}>新增第一笔交易</button></div></td></tr> : trades.map((trade, index) => <tr key={trade.id}>
+                  <td><input className="report-select-input" aria-label={`选择 ${trade.symbol} 用于今日策略战报`} type="checkbox" checked={selectedReportTradeIds.includes(trade.id)} onChange={event => toggleReportTrade(trade.id, event.target.checked)} /></td>
                   <td><span className="row-number">{String(index + 1).padStart(2, "0")}</span></td>
                   <td><input aria-label={`${trade.symbol} 股票代码`} className="cell-input symbol-input" defaultValue={trade.symbol} maxLength={32} onBlur={event => persistTrade(trade, "symbol", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 股票名称`} className="cell-input" defaultValue={trade.stockName} maxLength={80} onBlur={event => persistTrade(trade, "stockName", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 买入价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.buyPrice} onBlur={event => persistTrade(trade, "buyPrice", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 卖出价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.sellPrice ?? ""} placeholder="-----" onBlur={event => persistTrade(trade, "sellPrice", event.target.value)} /></td>
-                  <td><input aria-label={`${trade.symbol} 买入时间`} className="cell-input date-cell-input" type="datetime-local" defaultValue={trade.buyDate.replace(" ", "T")} onBlur={event => persistTrade(trade, "buyDate", event.target.value)} /></td>
-                  <td><input aria-label={`${trade.symbol} 卖出时间`} className="cell-input date-cell-input" type="datetime-local" defaultValue={trade.sellDate?.replace(" ", "T") ?? ""} onBlur={event => persistTrade(trade, "sellDate", event.target.value)} /></td>
+                  <td><input aria-label={`${trade.symbol} 买入时间`} className="cell-input date-cell-input" type="datetime-local" value={getTimeDraft(trade).buyDate} onChange={event => updateTimeDraft(trade, "buyDate", event.target.value)} /></td>
+                  <td><input aria-label={`${trade.symbol} 卖出时间`} className="cell-input date-cell-input" type="datetime-local" value={getTimeDraft(trade).sellDate} onChange={event => updateTimeDraft(trade, "sellDate", event.target.value)} /></td>
+                  <td className="time-confirm-cell">{hasTimeChanges(trade) && <button className="time-confirm-button" disabled={updateTrade.isPending} onClick={() => confirmTradeTimes(trade)}><CheckCircle2 />确认</button>}</td>
                   <td><span className={`return-tag ${isRealizedTrade(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}`}>{isRealizedTrade(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</span></td>
                   <td><button aria-label={`删除 ${trade.symbol} 交易`} className="delete-button" onClick={() => deleteTrade.mutate({ id: trade.id })}><Trash2 /></button></td>
                 </tr>)}
               </tbody>
             </table>
           </div>
-          <div className="table-footer"><span>共 <b>{trades.length}</b> 条交易记录，其中已实现 <b>{metrics.totalTrades}</b> 条</span><span>单笔收益率 = （卖出价 − 买入价）÷ 买入价</span></div>
+          <div className="table-footer"><span>共 <b>{trades.length}</b> 条交易记录，其中已实现 <b>{metrics.totalTrades}</b> 条；已勾选 <b>{selectedReportTradeIds.length}</b> / 4 条用于今日策略战报</span><span>单笔收益率 = （卖出价 − 买入价）÷ 买入价</span></div>
         </section>
 
         <footer className="site-footer"><BrandLogo /><span>中圆量化收益分析仪表板</span><span>数据由公开协作成员共同维护</span><span>© 2026</span></footer>
@@ -491,7 +521,7 @@ export default function Home() {
 
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent className="report-dialog">
-          <DialogHeader><p className="eyebrow">Strategy report</p><DialogTitle>导出今日策略战报</DialogTitle><DialogDescription>选择买入日期，系统将展示该日新增的前 4 支标的。</DialogDescription></DialogHeader>
+          <DialogHeader><p className="eyebrow">Strategy report</p><DialogTitle>导出今日策略战报</DialogTitle><DialogDescription>{selectedReportTradeIds.length > 0 ? `将优先使用交易明细中已勾选的 ${selectedReportTradeIds.length} 条记录。` : "选择买入日期，系统将展示该日新增的前 4 支标的。"}</DialogDescription></DialogHeader>
           <label className="report-date-field">买入日期<input type="date" value={reportDate} onChange={event => setReportDate(event.target.value)} /></label><div className="report-date-shortcuts"><span>快捷日期</span><div>{reportShortcutDates.map(date => <button type="button" className={date === reportDate ? "active" : ""} key={date} onClick={() => setReportDate(date)}>{date === today ? "今天" : date === yesterday ? "昨天" : date.slice(5).replace("-", "/")}</button>)}</div></div>
           <DialogFooter><button type="button" className="import-cancel" onClick={() => setIsReportOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={exportBuyReport}><Download />导出战报</button></DialogFooter>
         </DialogContent>
@@ -501,7 +531,7 @@ export default function Home() {
         <DialogContent className="report-dialog export-options-dialog"><DialogHeader><p className="eyebrow">Export settings</p><DialogTitle>{pendingExport === "strategy" ? "策略汇总海报" : "导出营销图"}</DialogTitle><DialogDescription>设置导出图片中交易明细的展示数量。</DialogDescription></DialogHeader><label className="report-date-field">明细数量<input aria-label="弹窗导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="例如 5 或 全部" /></label><div className="export-count-shortcuts"><button type="button" className={exportCount === "5" ? "active" : ""} onClick={() => setExportCount("5")}>5 条</button><button type="button" className={exportCount === "10" ? "active" : ""} onClick={() => setExportCount("10")}>10 条</button><button type="button" className={exportCount === "全部" ? "active" : ""} onClick={() => setExportCount("全部")}>全部</button></div><DialogFooter><button type="button" className="import-cancel" onClick={() => setIsExportOptionsOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={confirmPosterExport}><Download />确认导出</button></DialogFooter></DialogContent>
       </Dialog>
 
-      <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} detailTrades={exportTrades} /><StrategyPoster settings={settings} trades={trades} detailTrades={exportTrades} /><BuyReport trades={trades} reportDate={reportDate} /></div></div>
+      <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} detailTrades={exportTrades} /><StrategyPoster settings={settings} trades={trades} detailTrades={exportTrades} /><BuyReport trades={trades} reportDate={reportDate} selectedTradeIds={selectedReportTradeIds} /></div></div>
     </main>
   );
 }

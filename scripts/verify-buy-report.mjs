@@ -7,9 +7,13 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
   const firstBuyDate = (await page.locator('input[aria-label*="买入时间"]').first().inputValue()).slice(0, 10);
+  const selectionIndices = [0, 2, 4];
+  const selectedSymbols = await page.locator(".trade-table tbody tr").evaluateAll((rows, indices) => indices.map(index => rows[index]?.querySelector(".symbol-input")?.value).filter(Boolean), selectionIndices);
+  for (const index of selectionIndices) await page.locator(".report-select-input").nth(index).check();
   await page.getByRole("button", { name: "今日策略战报" }).click();
   const dialog = page.locator(".report-dialog");
   await dialog.waitFor({ state: "visible", timeout: 20000 });
+  if (!(await dialog.getByText(`将优先使用交易明细中已勾选的 ${selectionIndices.length} 条记录`).count())) throw new Error("今日策略战报未提示手动勾选优先规则");
   const dialogLayout = await dialog.evaluate((element) => {
     const close = element.querySelector('[data-slot="dialog-close"]');
     const footer = element.querySelector('[data-slot="dialog-footer"]');
@@ -26,6 +30,8 @@ try {
   if (shortcutCount < 2) throw new Error("今日策略战报缺少日期快捷选项");
   await dialog.locator('input[type="date"]').fill(firstBuyDate);
   await page.locator("#buy-report .buy-report-card").first().waitFor({ state: "attached", timeout: 5000 });
+  const reportSymbols = await page.locator("#buy-report .buy-report-card h2 small").evaluateAll(nodes => nodes.map(node => node.textContent?.replace("/", "").trim()));
+  if (JSON.stringify(reportSymbols) !== JSON.stringify(selectedSymbols)) throw new Error(`今日策略战报未按手动勾选记录生成：${JSON.stringify({ selectedSymbols, reportSymbols })}`);
   const reportContract = await page.locator("#buy-report").evaluate(report => ({
     title: report.querySelector(".buy-report-header h1")?.textContent?.trim(),
     cardBadges: report.querySelectorAll(".buy-report-badge").length,
@@ -85,7 +91,7 @@ try {
   });
   const expected = [1, 2, 3, 2];
   if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`今日策略战报标的布局异常：${JSON.stringify(layouts)}`);
-  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract, profitContract }));
+  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract, profitContract, selectedSymbols, reportSymbols }));
 } finally {
   await browser.close();
 }
