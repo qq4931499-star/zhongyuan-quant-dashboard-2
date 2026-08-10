@@ -85,3 +85,4 @@ button:disabled { cursor: wait; opacity: .7; }
 
 /* 无标的编号后收紧卡片顶部，并为 YYYY-MM-DD HH:mm 提供不换行的双列信息行。 */
 .buy-report-card { padding: 38px 24px 28px; }.buy-report-card h2 { margin-bottom: 18px; padding-bottom: 15px; }.buy-report-card dl div { display: grid; grid-template-columns: 76px minmax(0, 1fr); align-items: center; gap: 10px; padding: 13px 0; }.buy-report-card dt { font-size: 17px; white-space: nowrap; }.buy-report-card dd { font: 700 17px 'DM Mono'; letter-spacing: -.045em; white-space: nowrap; }.buy-report-logic { padding: 24px 22px; }.buy-report-logic > div { margin-top: 0; }
+.buy-report-card { min-height: 450px; }.buy-report-profit { font-weight: 800 !important; }.buy-report-profit.profit-positive { color: #f16f65; }.buy-report-profit.profit-negative { color: #75c69d; }.buy-report-profit.profit-pending { color: #c8ad78; }

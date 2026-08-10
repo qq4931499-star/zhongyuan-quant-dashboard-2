@@ -33,6 +33,14 @@ try {
     buyTime: report.querySelector(".buy-report-card dl div:nth-child(2) dd")?.textContent?.trim(),
   }));
   if (reportContract.title !== "今日策略战报" || reportContract.cardBadges !== 0 || reportContract.logicTitle || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(reportContract.buyTime ?? "")) throw new Error(`今日策略战报标题、卡片或分钟时间展示异常：${JSON.stringify(reportContract)}`);
+  const profitContract = await page.locator("#buy-report .buy-report-card").evaluateAll(cards => cards.map(card => {
+    const rows = Array.from(card.querySelectorAll("dl div"));
+    const profitRow = rows.find(row => row.querySelector("dt")?.textContent?.trim() === "收益率");
+    const value = profitRow?.querySelector("dd")?.textContent?.trim() ?? "";
+    const safe = rows.length === 5 && (value === "-----" || /^-?\d+(\.\d+)?%$/.test(value));
+    return { safe, rowCount: rows.length, value };
+  }));
+  if (profitContract.some(item => !item.safe)) throw new Error(`今日策略战报收益率字段异常：${JSON.stringify(profitContract)}`);
   const logicIcons = await page.locator("#buy-report .buy-report-logic article svg").count();
   if (logicIcons !== 4) throw new Error(`选股逻辑图标数量异常：${logicIcons}`);
   const iconLayout = await page.locator("#buy-report .buy-report-logic").evaluate((logic) => {
@@ -77,7 +85,7 @@ try {
   });
   const expected = [1, 2, 3, 2];
   if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`今日策略战报标的布局异常：${JSON.stringify(layouts)}`);
-  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract }));
+  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract, profitContract }));
 } finally {
   await browser.close();
 }
