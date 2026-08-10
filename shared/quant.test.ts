@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDashboardMetrics, calculateTrend, getTradeReturn, type QuantTrade } from "./quant";
+import { calculateDashboardMetrics, calculateTrend, getTradeReturn, hasSellPrice, isRealizedTrade, type QuantTrade } from "./quant";
 
 const sampleTrades: QuantTrade[] = [
   { id: 3, symbol: "BUY.GAIN", stockName: "上涨样例", buyPrice: 100, sellPrice: 110, buyDate: "2026-05-08 09:32", sellDate: "2026-05-09 10:05" },
@@ -36,6 +36,17 @@ describe("量化收益计算", () => {
 
     expect(getTradeReturn(openTrade)).toBe(0);
     expect(calculateTrend(allTrades).map(point => point.id)).not.toContain(openTrade.id);
+    expect(calculateDashboardMetrics(allTrades)).toMatchObject({ totalTrades: 2, totalProfit: -10, finalCumulativeReturn: 0 });
+  });
+
+  it("重新填写卖出价后立即具备可显示的单笔收益率，但未填写卖出时间仍不计入已实现统计", () => {
+    const repricedOpenTrade: QuantTrade = { id: 5, symbol: "REPRICE.OPEN", stockName: "回填卖出价样例", buyPrice: 80, sellPrice: 88, buyDate: "2026-05-11 09:30", sellDate: null };
+    const allTrades = [...sampleTrades, repricedOpenTrade];
+
+    expect(hasSellPrice(repricedOpenTrade)).toBe(true);
+    expect(getTradeReturn(repricedOpenTrade)).toBeCloseTo(0.1, 12);
+    expect(isRealizedTrade(repricedOpenTrade)).toBe(false);
+    expect(calculateTrend(allTrades).map(point => point.id)).not.toContain(repricedOpenTrade.id);
     expect(calculateDashboardMetrics(allTrades)).toMatchObject({ totalTrades: 2, totalProfit: -10, finalCumulativeReturn: 0 });
   });
 

@@ -24,11 +24,13 @@ export type DashboardMetrics = {
   finalCumulativeReturn: number;
 };
 
+export const hasSellPrice = (trade: Pick<QuantTrade, "sellPrice">): trade is Pick<QuantTrade, "sellPrice"> & { sellPrice: number } => typeof trade.sellPrice === "number";
+
 export const isRealizedTrade = (trade: Pick<QuantTrade, "sellPrice" | "sellDate">) =>
-  typeof trade.sellPrice === "number" && Boolean(trade.sellDate);
+  hasSellPrice(trade) && Boolean(trade.sellDate);
 
 export const getTradeReturn = (trade: Pick<QuantTrade, "buyPrice" | "sellPrice">) =>
-  trade.buyPrice > 0 && typeof trade.sellPrice === "number" ? (trade.sellPrice - trade.buyPrice) / trade.buyPrice : 0;
+  trade.buyPrice > 0 && hasSellPrice(trade) ? (trade.sellPrice - trade.buyPrice) / trade.buyPrice : 0;
 
 export function calculateTrend(trades: QuantTrade[]): TrendPoint[] {
   let cumulativeReturn = 0;

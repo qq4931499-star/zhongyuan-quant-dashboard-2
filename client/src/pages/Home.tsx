@@ -1,6 +1,6 @@
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, isRealizedTrade, type QuantTrade } from "@shared/quant";
+import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, hasSellPrice, isRealizedTrade, type QuantTrade } from "@shared/quant";
 import { normalizeTradeDateTime } from "@shared/tradeImport";
 import html2canvas from "html2canvas";
 import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, FileUp, Loader2, Plus, ShieldCheck, Sparkles, Trash2, TrendingUp } from "lucide-react";
@@ -183,7 +183,7 @@ function MarketingExport({ settings, trades, detailTrades }: { settings: Setting
       <div className="export-table-title"><span>交易明细</span><span>展示 {detailTrades.length} / {trades.length}</span></div>
       <table className="export-trade-table">
         <thead><tr><th>#</th><th>股票</th><th>买入</th><th>卖出</th><th>卖出日</th><th>收益率</th></tr></thead>
-        <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{String(index + 1).padStart(2, "0")}</td><td><b>{trade.symbol}</b><span>{trade.stockName}</span></td><td>{trade.buyPrice.toFixed(2)}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate?.slice(5) ?? "-----"}</td><td className={isRealizedTrade(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}>{isRealizedTrade(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
+        <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{String(index + 1).padStart(2, "0")}</td><td><b>{trade.symbol}</b><span>{trade.stockName}</span></td><td>{trade.buyPrice.toFixed(2)}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate?.slice(5) ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
       </table>
       <footer className="export-footer"><span>中圆量化 · 数据维护于云端</span><strong>FINAL {formatPercent(metrics.finalCumulativeReturn)}</strong></footer>
     </section>
@@ -217,7 +217,7 @@ function StrategyPoster({ settings, trades, detailTrades }: { settings: Settings
         <div className="poster-ledger-heading"><span>交易明细</span><b>（T+1交易策略 · 当前记录收益区间 {formatPercent(minReturn)} — {formatPercent(metrics.maximumReturn)}）</b></div>
         <table className="poster-trade-table">
           <thead><tr><th>序列</th><th>股票名称</th><th>股票代码</th><th>买入价格</th><th>买入时间</th><th>卖出价格</th><th>卖出时间</th><th>收益率</th></tr></thead>
-          <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{index + 1}</td><td>{trade.stockName}</td><td>{trade.symbol}</td><td>{trade.buyPrice.toFixed(2)}</td><td>{trade.buyDate}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate ?? "-----"}</td><td className={isRealizedTrade(trade) ? getTradeReturn(trade) >= 0 ? "poster-positive" : "poster-negative" : "poster-pending"}>{isRealizedTrade(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
+          <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{index + 1}</td><td>{trade.stockName}</td><td>{trade.symbol}</td><td>{trade.buyPrice.toFixed(2)}</td><td>{trade.buyDate}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "poster-positive" : "poster-negative" : "poster-pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
         </table>
       </div>
       <footer className="poster-footer"><strong>量行致远 · 衡守初心</strong><span>中圆量化，以数据洞察市场，以模型辅助研判，以风控守护每一次决策。</span></footer>
@@ -232,7 +232,7 @@ function BuyReport({ trades, reportDate, selectedTradeIds }: { trades: QuantTrad
   return (
     <section id="buy-report" data-export-stage aria-hidden="true">
       <header className="buy-report-header"><BrandLogo exportMode src={POSTER_WHITE_LOGO_URL} /><p>ZHONGYUAN QUANTITATIVE</p><h1>今日策略战报</h1><time>{reportDate.replaceAll("-", ".")}</time><strong>中圆量化智能决策系统</strong></header>
-      {selectedTrades.length === 0 ? <div className="buy-report-empty">该日期暂无新增交易明细</div> : <div className={`buy-report-grid buy-report-count-${selectedTrades.length}`}>{selectedTrades.map(trade => <article className="buy-report-card" key={trade.id}><h2>{trade.stockName} <small>/ {trade.symbol}</small></h2><dl><div><dt>买入价格</dt><dd>{trade.buyPrice.toFixed(2)}</dd></div><div><dt>买入时间</dt><dd>{trade.buyDate}</dd></div><div><dt>卖出价格</dt><dd>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</dd></div><div><dt>卖出时间</dt><dd>{trade.sellDate ?? "-----"}</dd></div><div><dt>收益率</dt><dd className={`buy-report-profit ${isRealizedTrade(trade) ? getTradeReturn(trade) >= 0 ? "profit-positive" : "profit-negative" : "profit-pending"}`}>{isRealizedTrade(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</dd></div></dl></article>)}</div>}
+      {selectedTrades.length === 0 ? <div className="buy-report-empty">该日期暂无新增交易明细</div> : <div className={`buy-report-grid buy-report-count-${selectedTrades.length}`}>{selectedTrades.map(trade => <article className="buy-report-card" key={trade.id}><h2>{trade.stockName} <small>/ {trade.symbol}</small></h2><dl><div><dt>买入价格</dt><dd>{trade.buyPrice.toFixed(2)}</dd></div><div><dt>买入时间</dt><dd>{trade.buyDate}</dd></div><div><dt>卖出价格</dt><dd>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</dd></div><div><dt>卖出时间</dt><dd>{trade.sellDate ?? "-----"}</dd></div><div><dt>收益率</dt><dd className={`buy-report-profit ${hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "profit-positive" : "profit-negative" : "profit-pending"}`}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</dd></div></dl></article>)}</div>}
       <section className="buy-report-logic"><div>{logicItems.map(({ label, Icon }) => <article key={label}><span className="buy-report-logic-icon" aria-hidden="true"><Icon strokeWidth={1.7} viewBox="-2 -2 28 28" /></span><b>{label}</b></article>)}</div></section>
       <footer className="buy-report-footer"><strong>量行致远 · 衡守初心</strong><span>数据仅供策略研究与交流，不构成任何投资建议</span></footer>
     </section>
@@ -274,7 +274,15 @@ export default function Home() {
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   const reportShortcutDates = useMemo(() => Array.from(new Set([today, yesterday, ...trades.map(trade => trade.buyDate.slice(0, 10))])).sort((a, b) => b.localeCompare(a)).slice(0, 6), [today, yesterday, trades]);
   const updateSettings = trpc.dashboard.updateSettings.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
-  const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
+  const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: updated => {
+    if (updated) {
+      utils.dashboard.snapshot.setData(undefined, snapshot => snapshot ? {
+        ...snapshot,
+        trades: snapshot.trades.map(trade => trade.id === updated.id ? { ...trade, ...updated } : trade),
+      } : snapshot);
+    }
+    void refresh();
+  }, onError: error => toast.error(error.message) });
   const deleteTrade = trpc.dashboard.deleteTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const createTrade = trpc.dashboard.createTrade.useMutation({ onSuccess: () => { refresh(); setIsModalOpen(false); toast.success("交易已保存"); }, onError: error => toast.error(error.message) });
   const bulkImportTrades = trpc.dashboard.bulkImportTrades.useMutation();
@@ -494,7 +502,7 @@ export default function Home() {
                   <td><input aria-label={`${trade.symbol} 买入时间`} className="cell-input date-cell-input" type="datetime-local" value={getTimeDraft(trade).buyDate} onChange={event => updateTimeDraft(trade, "buyDate", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 卖出时间`} className="cell-input date-cell-input" type="datetime-local" value={getTimeDraft(trade).sellDate} onChange={event => updateTimeDraft(trade, "sellDate", event.target.value)} /></td>
                   <td className="time-confirm-cell">{hasTimeChanges(trade) && <button className="time-confirm-button" disabled={updateTrade.isPending} onClick={() => confirmTradeTimes(trade)}><CheckCircle2 />确认</button>}</td>
-                  <td><span className={`return-tag ${isRealizedTrade(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}`}>{isRealizedTrade(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</span></td>
+                  <td><span className={`return-tag ${hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}`}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</span></td>
                   <td><button aria-label={`删除 ${trade.symbol} 交易`} className="delete-button" onClick={() => deleteTrade.mutate({ id: trade.id })}><Trash2 /></button></td>
                 </tr>)}
               </tbody>
