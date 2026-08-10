@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { calculateDashboardMetrics, calculateTrend, getTradeReturn, type QuantTrade } from "./quant";
 
 const sampleTrades: QuantTrade[] = [
-  { id: 3, symbol: "BUY.GAIN", stockName: "上涨样例", buyPrice: 100, sellPrice: 110, buyDate: "2026-05-08", sellDate: "2026-05-09" },
-  { id: 2, symbol: "SELL.LOSS", stockName: "下跌样例", buyPrice: 200, sellPrice: 180, buyDate: "2026-05-07", sellDate: "2026-05-08" },
+  { id: 3, symbol: "BUY.GAIN", stockName: "上涨样例", buyPrice: 100, sellPrice: 110, buyDate: "2026-05-08 09:32", sellDate: "2026-05-09 10:05" },
+  { id: 2, symbol: "SELL.LOSS", stockName: "下跌样例", buyPrice: 200, sellPrice: 180, buyDate: "2026-05-07 14:20", sellDate: "2026-05-08 09:58" },
 ];
 
 describe("量化收益计算", () => {
@@ -13,7 +13,7 @@ describe("量化收益计算", () => {
     expect(getTradeReturn({ buyPrice: 0, sellPrice: 100 })).toBe(0);
   });
 
-  it("按卖出日期和记录序号排序，逐笔累计收益率", () => {
+  it("按卖出日期时间和记录序号排序，逐笔累计收益率", () => {
     const trend = calculateTrend(sampleTrades);
     expect(trend.map(point => point.id)).toEqual([2, 3]);
     expect(trend[0]?.cumulativeReturn).toBeCloseTo(-0.1, 12);
@@ -31,7 +31,7 @@ describe("量化收益计算", () => {
   });
 
   it("将卖出字段为空的未平仓交易保留在原始记录中，但排除已实现收益指标与趋势", () => {
-    const openTrade: QuantTrade = { id: 4, symbol: "OPEN.POS", stockName: "未平仓样例", buyPrice: 50, sellPrice: null, buyDate: "2026-05-10", sellDate: null };
+    const openTrade: QuantTrade = { id: 4, symbol: "OPEN.POS", stockName: "未平仓样例", buyPrice: 50, sellPrice: null, buyDate: "2026-05-10 13:45", sellDate: null };
     const allTrades = [...sampleTrades, openTrade];
 
     expect(getTradeReturn(openTrade)).toBe(0);

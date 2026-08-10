@@ -1,6 +1,7 @@
 import { trpc } from "@/lib/trpc";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, isRealizedTrade, type QuantTrade } from "@shared/quant";
+import { normalizeTradeDateTime } from "@shared/tradeImport";
 import html2canvas from "html2canvas";
 import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, FileUp, Loader2, Plus, ShieldCheck, Sparkles, Trash2, TrendingUp } from "lucide-react";
 import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
@@ -29,8 +30,8 @@ const importColumns = [
   { key: "stockName", label: "股票名称", aliases: ["股票名称", "名称", "stockname", "stock name"] },
   { key: "buyPrice", label: "买入价", aliases: ["买入价", "买入价格", "buyprice", "buy price"] },
   { key: "sellPrice", label: "卖出价", aliases: ["卖出价", "卖出价格", "sellprice", "sell price"] },
-  { key: "buyDate", label: "买入日期", aliases: ["买入日期", "buydate", "buy date"] },
-  { key: "sellDate", label: "卖出日期", aliases: ["卖出日期", "selldate", "sell date"] },
+  { key: "buyDate", label: "买入时间", aliases: ["买入时间", "买入日期", "buydatetime", "buydate", "buy time", "buy date"] },
+  { key: "sellDate", label: "卖出时间", aliases: ["卖出时间", "卖出日期", "selldatetime", "selldate", "sell time", "sell date"] },
 ] as const;
 
 function findImportCell(record: Record<string, unknown>, aliases: readonly string[]) {
@@ -38,17 +39,20 @@ function findImportCell(record: Record<string, unknown>, aliases: readonly strin
   return entry?.[1] ?? "";
 }
 
-function normalizeImportDate(value: unknown) {
-  const parts = String(value ?? "").trim().replace(/[./]/g, "-").split("-").filter(Boolean);
+function normalizeImportDateTime(value: unknown) {
+  const raw = String(value ?? "").trim().replace(/[./]/g, "-").replace("T", " ");
+  const [rawDate, rawTime = "00:00"] = raw.split(/\s+/);
+  const parts = (rawDate ?? "").split("-").filter(Boolean);
   if (parts.length !== 3 || parts.some(part => !/^\d+$/.test(part))) return null;
   const [first, second, third] = parts;
   const year = first!.length === 4 ? first! : third!.length === 2 ? `20${third}` : third!;
   const month = first!.length === 4 ? second! : first!;
   const day = first!.length === 4 ? third! : second!;
   if (year.length !== 4) return null;
-  const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
-  const date = new Date(`${normalized}T00:00:00Z`);
-  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== normalized ? null : normalized;
+  if (!/^\d{1,2}:\d{2}$/.test(rawTime)) return null;
+  const normalized = `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")} ${rawTime.padStart(5, "0")}`;
+  const date = new Date(`${normalized.replace(" ", "T")}:00Z`);
+  return Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== normalized.slice(0, 10) || date.getUTCHours() !== Number(rawTime.split(":")[0]) || date.getUTCMinutes() !== Number(rawTime.split(":")[1]) ? null : normalized;
 }
 
 function parseImportRecords(records: Record<string, unknown>[]) {
@@ -65,9 +69,9 @@ function parseImportRecords(records: Record<string, unknown>[]) {
     const buyPrice = Number(String(findImportCell(record, importColumns[2].aliases)).replace(/[￥¥,\s]/g, ""));
     const sellPriceRaw = String(findImportCell(record, importColumns[3].aliases)).trim();
     const sellPrice = sellPriceRaw ? Number(sellPriceRaw.replace(/[￥¥,\s]/g, "")) : null;
-    const buyDate = normalizeImportDate(findImportCell(record, importColumns[4].aliases));
+    const buyDate = normalizeImportDateTime(findImportCell(record, importColumns[4].aliases));
     const sellDateRaw = String(findImportCell(record, importColumns[5].aliases)).trim();
-    const sellDate = sellDateRaw ? normalizeImportDate(sellDateRaw) : null;
+    const sellDate = sellDateRaw ? normalizeImportDateTime(sellDateRaw) : null;
     const messages = [!symbol && "股票代码为空", !stockName && "股票名称为空", (!Number.isFinite(buyPrice) || buyPrice <= 0) && "买入价无效", (sellPriceRaw && (!Number.isFinite(sellPrice) || sellPrice! <= 0)) && "卖出价无效", !buyDate && "买入日期无效", (sellDateRaw && !sellDate) && "卖出日期无效"].filter(Boolean) as string[];
     if (messages.length > 0) {
       issues.push({ row: rowNumber, message: messages.join("；") });
@@ -222,13 +226,13 @@ function StrategyPoster({ settings, trades, detailTrades }: { settings: Settings
 }
 
 function BuyReport({ trades, reportDate }: { trades: QuantTrade[]; reportDate: string }) {
-  const selectedTrades = trades.filter(trade => trade.buyDate === reportDate).slice(0, 4);
+  const selectedTrades = trades.filter(trade => trade.buyDate.startsWith(reportDate)).slice(0, 4);
   const logicItems = [{ label: "趋势识别", Icon: TrendingUp }, { label: "资金行为", Icon: CircleDollarSign }, { label: "多因子共振", Icon: Sparkles }, { label: "风险过滤", Icon: ShieldCheck }];
   return (
     <section id="buy-report" data-export-stage aria-hidden="true">
-      <header className="buy-report-header"><BrandLogo exportMode src={POSTER_WHITE_LOGO_URL} /><p>ZHONGYUAN QUANTITATIVE</p><h1>今日买票战报</h1><time>{reportDate.replaceAll("-", ".")}</time><strong>中圆量化智能决策系统</strong></header>
-      {selectedTrades.length === 0 ? <div className="buy-report-empty">该日期暂无新增交易明细</div> : <div className={`buy-report-grid buy-report-count-${selectedTrades.length}`}>{selectedTrades.map((trade, index) => <article className="buy-report-card" key={trade.id}><span className="buy-report-badge">标的{["一", "二", "三", "四"][index]}</span><h2>{trade.stockName} <small>/ {trade.symbol}</small></h2><dl><div><dt>买入价格</dt><dd>{trade.buyPrice.toFixed(2)}</dd></div><div><dt>买入日期</dt><dd>{trade.buyDate}</dd></div><div><dt>卖出价格</dt><dd>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</dd></div><div><dt>卖出日期</dt><dd>{trade.sellDate ?? "-----"}</dd></div></dl></article>)}</div>}
-      <section className="buy-report-logic"><span>系统选股逻辑</span><div>{logicItems.map(({ label, Icon }) => <article key={label}><span className="buy-report-logic-icon" aria-hidden="true"><Icon strokeWidth={1.7} viewBox="-2 -2 28 28" /></span><b>{label}</b></article>)}</div></section>
+      <header className="buy-report-header"><BrandLogo exportMode src={POSTER_WHITE_LOGO_URL} /><p>ZHONGYUAN QUANTITATIVE</p><h1>今日策略战报</h1><time>{reportDate.replaceAll("-", ".")}</time><strong>中圆量化智能决策系统</strong></header>
+      {selectedTrades.length === 0 ? <div className="buy-report-empty">该日期暂无新增交易明细</div> : <div className={`buy-report-grid buy-report-count-${selectedTrades.length}`}>{selectedTrades.map(trade => <article className="buy-report-card" key={trade.id}><h2>{trade.stockName} <small>/ {trade.symbol}</small></h2><dl><div><dt>买入价格</dt><dd>{trade.buyPrice.toFixed(2)}</dd></div><div><dt>买入时间</dt><dd>{trade.buyDate}</dd></div><div><dt>卖出价格</dt><dd>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</dd></div><div><dt>卖出时间</dt><dd>{trade.sellDate ?? "-----"}</dd></div></dl></article>)}</div>}
+      <section className="buy-report-logic"><div>{logicItems.map(({ label, Icon }) => <article key={label}><span className="buy-report-logic-icon" aria-hidden="true"><Icon strokeWidth={1.7} viewBox="-2 -2 28 28" /></span><b>{label}</b></article>)}</div></section>
       <footer className="buy-report-footer"><strong>量行致远 · 衡守初心</strong><span>数据仅供策略研究与交流，不构成任何投资建议</span></footer>
     </section>
   );
@@ -261,7 +265,7 @@ export default function Home() {
   const refresh = () => utils.dashboard.snapshot.invalidate();
   const today = new Date().toISOString().slice(0, 10);
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
-  const reportShortcutDates = useMemo(() => Array.from(new Set([today, yesterday, ...trades.map(trade => trade.buyDate)])).sort((a, b) => b.localeCompare(a)).slice(0, 6), [today, yesterday, trades]);
+  const reportShortcutDates = useMemo(() => Array.from(new Set([today, yesterday, ...trades.map(trade => trade.buyDate.slice(0, 10))])).sort((a, b) => b.localeCompare(a)).slice(0, 6), [today, yesterday, trades]);
   const updateSettings = trpc.dashboard.updateSettings.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const deleteTrade = trpc.dashboard.deleteTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
@@ -277,7 +281,7 @@ export default function Home() {
       if (trade[field] !== null) updateTrade.mutate({ id: trade.id, values: { [field]: null } });
       return;
     }
-    const value = field === "buyPrice" || field === "sellPrice" ? Number(rawValue) : rawValue.trim();
+    const value = field === "buyPrice" || field === "sellPrice" ? Number(rawValue) : field === "buyDate" || field === "sellDate" ? normalizeTradeDateTime(rawValue) : rawValue.trim();
     if ((typeof value === "number" && (!Number.isFinite(value) || value <= 0)) || (typeof value === "string" && !value)) {
       toast.error("请填写有效的交易信息");
       return;
@@ -291,7 +295,7 @@ export default function Home() {
     createTrade.mutate({
       symbol: String(form.get("symbol") ?? ""), stockName: String(form.get("stockName") ?? ""),
       buyPrice: Number(form.get("buyPrice")), sellPrice: String(form.get("sellPrice") ?? "").trim() ? Number(form.get("sellPrice")) : null,
-      buyDate: String(form.get("buyDate") ?? ""), sellDate: String(form.get("sellDate") ?? "").trim() || null,
+      buyDate: normalizeTradeDateTime(String(form.get("buyDate") ?? "")), sellDate: String(form.get("sellDate") ?? "").trim() ? normalizeTradeDateTime(String(form.get("sellDate"))) : null,
     });
   };
 
@@ -303,8 +307,8 @@ export default function Home() {
   const downloadImportTemplate = () => {
     const workbook = xlsxUtils.book_new();
     const worksheet = xlsxUtils.json_to_sheet([
-      { "股票代码": "600519.SH", "股票名称": "贵州茅台", "买入价": 1685.5, "卖出价": 1798.6, "买入日期": "2026-05-06", "卖出日期": "2026-05-07" },
-      { "股票代码": "300750.SZ", "股票名称": "宁德时代", "买入价": 193.45, "卖出价": "", "买入日期": "2026-05-07", "卖出日期": "" },
+      { "股票代码": "600519.SH", "股票名称": "贵州茅台", "买入价": 1685.5, "卖出价": 1798.6, "买入时间": "2026-05-06 09:35", "卖出时间": "2026-05-07 10:02" },
+      { "股票代码": "300750.SZ", "股票名称": "宁德时代", "买入价": 193.45, "卖出价": "", "买入时间": "2026-05-07 10:18", "卖出时间": "" },
     ]);
     xlsxUtils.book_append_sheet(workbook, worksheet, "交易明细");
     writeFile(workbook, "中圆量化-交易批量导入模板.xlsx");
@@ -406,7 +410,7 @@ export default function Home() {
   };
   const exportMarketingImage = () => exportImage({ stageId: "marketing-export", captureClass: "marketing-export-capture", fileSuffix: "营销图", backgroundColor: "#f7f4ef" });
   const exportStrategyPoster = () => exportImage({ stageId: "strategy-poster", captureClass: "strategy-poster-capture", fileSuffix: "策略汇总海报", backgroundColor: "#0a0908" });
-  const exportBuyReport = () => { setIsReportOpen(false); exportImage({ stageId: "buy-report", captureClass: "buy-report-capture", fileSuffix: `${reportDate.replaceAll("-", "")}-买票战报`, backgroundColor: "#080807" }); };
+  const exportBuyReport = () => { setIsReportOpen(false); exportImage({ stageId: "buy-report", captureClass: "buy-report-capture", fileSuffix: `${reportDate.replaceAll("-", "")}-今日策略战报`, backgroundColor: "#080807" }); };
   const openExportOptions = (target: "marketing" | "strategy") => { setPendingExport(target); setIsExportOptionsOpen(true); };
   const confirmPosterExport = () => { setIsExportOptionsOpen(false); if (pendingExport === "strategy") exportStrategyPoster(); if (pendingExport === "marketing") exportMarketingImage(); };
   const resolvedExportCount = exportCount.trim().toLowerCase() === "全部" || exportCount.trim().toLowerCase() === "all" ? trades.length : Math.max(1, Math.min(trades.length, Number.parseInt(exportCount, 10) || 5));
@@ -446,11 +450,11 @@ export default function Home() {
         <section className="trade-section">
           <div className="section-heading table-heading">
             <div><p className="eyebrow">Trading ledger</p><h2>交易明细</h2></div>
-            <div className="table-actions"><button className="battle-report-button" onClick={() => setIsReportOpen(true)}><FileSpreadsheet />买票战报</button><button className="template-button" onClick={downloadImportTemplate}><Download />下载模板</button><button className="import-trade-button" onClick={() => { resetImport(); setIsImportOpen(true); }}><FileUp />批量导入</button><button className="add-trade-button" onClick={() => setIsModalOpen(true)}><Plus />新增交易</button></div>
+            <div className="table-actions"><button className="battle-report-button" onClick={() => setIsReportOpen(true)}><FileSpreadsheet />今日策略战报</button><button className="template-button" onClick={downloadImportTemplate}><Download />下载模板</button><button className="import-trade-button" onClick={() => { resetImport(); setIsImportOpen(true); }}><FileUp />批量导入</button><button className="add-trade-button" onClick={() => setIsModalOpen(true)}><Plus />新增交易</button></div>
           </div>
           <div className="table-scroll">
             <table className="trade-table">
-              <thead><tr><th>序号</th><th>股票代码</th><th>股票名称</th><th>买入价</th><th>卖出价</th><th>买入日期</th><th>卖出日期</th><th>单笔收益率</th><th aria-label="操作" /></tr></thead>
+              <thead><tr><th>序号</th><th>股票代码</th><th>股票名称</th><th>买入价</th><th>卖出价</th><th>买入时间</th><th>卖出时间</th><th>单笔收益率</th><th aria-label="操作" /></tr></thead>
               <tbody>
                 {trades.length === 0 ? <tr><td colSpan={9}><div className="table-empty"><TrendingUp /><span>暂无交易记录</span><button onClick={() => setIsModalOpen(true)}>新增第一笔交易</button></div></td></tr> : trades.map((trade, index) => <tr key={trade.id}>
                   <td><span className="row-number">{String(index + 1).padStart(2, "0")}</span></td>
@@ -458,8 +462,8 @@ export default function Home() {
                   <td><input aria-label={`${trade.symbol} 股票名称`} className="cell-input" defaultValue={trade.stockName} maxLength={80} onBlur={event => persistTrade(trade, "stockName", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 买入价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.buyPrice} onBlur={event => persistTrade(trade, "buyPrice", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 卖出价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.sellPrice ?? ""} placeholder="-----" onBlur={event => persistTrade(trade, "sellPrice", event.target.value)} /></td>
-                  <td><input aria-label={`${trade.symbol} 买入日期`} className="cell-input date-cell-input" type="date" defaultValue={trade.buyDate} onBlur={event => persistTrade(trade, "buyDate", event.target.value)} /></td>
-                  <td><input aria-label={`${trade.symbol} 卖出日期`} className="cell-input date-cell-input" type="date" defaultValue={trade.sellDate ?? ""} onBlur={event => persistTrade(trade, "sellDate", event.target.value)} /></td>
+                  <td><input aria-label={`${trade.symbol} 买入时间`} className="cell-input date-cell-input" type="datetime-local" defaultValue={trade.buyDate.replace(" ", "T")} onBlur={event => persistTrade(trade, "buyDate", event.target.value)} /></td>
+                  <td><input aria-label={`${trade.symbol} 卖出时间`} className="cell-input date-cell-input" type="datetime-local" defaultValue={trade.sellDate?.replace(" ", "T") ?? ""} onBlur={event => persistTrade(trade, "sellDate", event.target.value)} /></td>
                   <td><span className={`return-tag ${isRealizedTrade(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}`}>{isRealizedTrade(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</span></td>
                   <td><button aria-label={`删除 ${trade.symbol} 交易`} className="delete-button" onClick={() => deleteTrade.mutate({ id: trade.id })}><Trash2 /></button></td>
                 </tr>)}
@@ -472,11 +476,11 @@ export default function Home() {
         <footer className="site-footer"><BrandLogo /><span>中圆量化收益分析仪表板</span><span>数据由公开协作成员共同维护</span><span>© 2026</span></footer>
       </div>
 
-      {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<input name="symbol" required maxLength={32} placeholder="600519.SH" /></label><label>股票名称<input name="stockName" required maxLength={80} placeholder="贵州茅台" /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价（可留空）<input name="sellPrice" type="number" min="0.01" step="0.01" placeholder="-----" /></label><label>买入日期<input name="buyDate" required type="date" defaultValue={settings.startDate} /></label><label>卖出日期（可留空）<input name="sellDate" type="date" /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
+      {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<input name="symbol" required maxLength={32} placeholder="600519.SH" /></label><label>股票名称<input name="stockName" required maxLength={80} placeholder="贵州茅台" /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价（可留空）<input name="sellPrice" type="number" min="0.01" step="0.01" placeholder="-----" /></label><label>买入时间<input name="buyDate" required type="datetime-local" defaultValue={`${settings.startDate}T00:00`} /></label><label>卖出时间（可留空）<input name="sellDate" type="datetime-local" /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
 
       <Dialog open={isImportOpen} onOpenChange={open => { setIsImportOpen(open); if (!open) resetImport(); }}>
         <DialogContent className="import-dialog" showCloseButton={false}>
-          <DialogHeader><p className="eyebrow">Bulk import</p><DialogTitle>批量导入交易明细</DialogTitle><DialogDescription>支持 CSV 与 XLSX 文件；股票代码、名称、买入价和买入日期为必填，卖出价与卖出日期可留空。</DialogDescription></DialogHeader>
+          <DialogHeader><p className="eyebrow">Bulk import</p><DialogTitle>批量导入交易明细</DialogTitle><DialogDescription>支持 CSV 与 XLSX 文件；股票代码、名称、买入价和买入时间为必填，时间格式为 YYYY-MM-DD HH:mm；卖出字段可留空。</DialogDescription></DialogHeader>
           <div className="import-helper"><div><FileSpreadsheet /><span>下载标准模板后，填入最多 500 条交易。</span></div><button type="button" onClick={downloadImportTemplate}><Download />下载模板</button></div>
           <label className="import-dropzone"><input ref={importInputRef} type="file" accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={handleImportFile} /><FileUp /><strong>选择 CSV 或 Excel 文件</strong><span>文件仅在浏览器中解析并发送交易数据</span></label>
           {importFileName && <div className={`import-summary ${importIssues.length > 0 ? "has-errors" : ""}`}>{importIssues.length === 0 ? <CheckCircle2 /> : <span>!</span>}<div><strong>{importFileName}</strong><small>{importIssues.length === 0 ? `已识别 ${importRows.length} 条交易，导入时将自动跳过重复记录。` : `发现 ${importIssues.length} 处问题，请修正后重新选择文件。`}</small></div></div>}
@@ -487,7 +491,7 @@ export default function Home() {
 
       <Dialog open={isReportOpen} onOpenChange={setIsReportOpen}>
         <DialogContent className="report-dialog">
-          <DialogHeader><p className="eyebrow">Buy report</p><DialogTitle>导出买票战报</DialogTitle><DialogDescription>选择买入日期，系统将展示该日新增的前 4 支标的。</DialogDescription></DialogHeader>
+          <DialogHeader><p className="eyebrow">Strategy report</p><DialogTitle>导出今日策略战报</DialogTitle><DialogDescription>选择买入日期，系统将展示该日新增的前 4 支标的。</DialogDescription></DialogHeader>
           <label className="report-date-field">买入日期<input type="date" value={reportDate} onChange={event => setReportDate(event.target.value)} /></label><div className="report-date-shortcuts"><span>快捷日期</span><div>{reportShortcutDates.map(date => <button type="button" className={date === reportDate ? "active" : ""} key={date} onClick={() => setReportDate(date)}>{date === today ? "今天" : date === yesterday ? "昨天" : date.slice(5).replace("-", "/")}</button>)}</div></div>
           <DialogFooter><button type="button" className="import-cancel" onClick={() => setIsReportOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={exportBuyReport}><Download />导出战报</button></DialogFooter>
         </DialogContent>

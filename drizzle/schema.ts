@@ -43,8 +43,8 @@ export const trades = mysqlTable("trades", {
   stockName: varchar("stockName", { length: 80 }).notNull(),
   buyPrice: double("buyPrice").notNull(),
   sellPrice: double("sellPrice"),
-  buyDate: varchar("buyDate", { length: 10 }).notNull(),
-  sellDate: varchar("sellDate", { length: 10 }),
+  buyDate: varchar("buyDate", { length: 16 }).notNull(),
+  sellDate: varchar("sellDate", { length: 16 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

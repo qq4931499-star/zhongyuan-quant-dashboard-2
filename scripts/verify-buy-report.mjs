@@ -6,26 +6,33 @@ const browser = await chromium.launch({ headless: true, executablePath: "/usr/bi
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
-  const firstBuyDate = await page.locator('input[aria-label*="买入日期"]').first().inputValue();
-  await page.getByRole("button", { name: "买票战报" }).click();
+  const firstBuyDate = (await page.locator('input[aria-label*="买入时间"]').first().inputValue()).slice(0, 10);
+  await page.getByRole("button", { name: "今日策略战报" }).click();
   const dialog = page.locator(".report-dialog");
   await dialog.waitFor({ state: "visible", timeout: 20000 });
   const dialogLayout = await dialog.evaluate((element) => {
     const close = element.querySelector('[data-slot="dialog-close"]');
     const footer = element.querySelector('[data-slot="dialog-footer"]');
     const buttons = Array.from(element.querySelectorAll('[data-slot="dialog-footer"] button'));
-    if (!close || !footer || buttons.length !== 2) throw new Error("买票战报弹窗关键操作控件缺失");
+    if (!close || !footer || buttons.length !== 2) throw new Error("今日策略战报弹窗关键操作控件缺失");
     const rect = element.getBoundingClientRect();
     const closeRect = close.getBoundingClientRect();
     const buttonRects = buttons.map(button => button.getBoundingClientRect());
     const safe = rect.left >= 10 && rect.right <= window.innerWidth - 10 && rect.top >= 10 && rect.bottom <= window.innerHeight - 10 && closeRect.right <= rect.right - 10 && closeRect.top >= rect.top + 10 && buttonRects.every(button => button.height >= 44);
     return { safe, closeWidth: Math.round(closeRect.width), buttonHeights: buttonRects.map(button => Math.round(button.height)) };
   });
-  if (!dialogLayout.safe) throw new Error(`买票战报弹窗布局异常：${JSON.stringify(dialogLayout)}`);
+  if (!dialogLayout.safe) throw new Error(`今日策略战报弹窗布局异常：${JSON.stringify(dialogLayout)}`);
   const shortcutCount = await dialog.locator(".report-date-shortcuts button").count();
-  if (shortcutCount < 2) throw new Error("买票战报缺少日期快捷选项");
+  if (shortcutCount < 2) throw new Error("今日策略战报缺少日期快捷选项");
   await dialog.locator('input[type="date"]').fill(firstBuyDate);
   await page.locator("#buy-report .buy-report-card").first().waitFor({ state: "attached", timeout: 5000 });
+  const reportContract = await page.locator("#buy-report").evaluate(report => ({
+    title: report.querySelector(".buy-report-header h1")?.textContent?.trim(),
+    cardBadges: report.querySelectorAll(".buy-report-badge").length,
+    logicTitle: report.querySelector(".buy-report-logic > span")?.textContent?.trim() ?? "",
+    buyTime: report.querySelector(".buy-report-card dl div:nth-child(2) dd")?.textContent?.trim(),
+  }));
+  if (reportContract.title !== "今日策略战报" || reportContract.cardBadges !== 0 || reportContract.logicTitle || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(reportContract.buyTime ?? "")) throw new Error(`今日策略战报标题、卡片或分钟时间展示异常：${JSON.stringify(reportContract)}`);
   const logicIcons = await page.locator("#buy-report .buy-report-logic article svg").count();
   if (logicIcons !== 4) throw new Error(`选股逻辑图标数量异常：${logicIcons}`);
   const iconLayout = await page.locator("#buy-report .buy-report-logic").evaluate((logic) => {
@@ -47,19 +54,19 @@ try {
     dialog.getByRole("button", { name: "导出战报" }).click(),
   ]);
   const filePath = await download.path();
-  if (!filePath) throw new Error("未获得买票战报下载文件");
+  if (!filePath) throw new Error("未获得今日策略战报下载文件");
   const bytes = await readFile(filePath);
-  if (bytes.toString("ascii", 1, 4) !== "PNG") throw new Error("买票战报不是 PNG 文件");
+  if (bytes.toString("ascii", 1, 4) !== "PNG") throw new Error("今日策略战报不是 PNG 文件");
   const width = bytes.readUInt32BE(16);
   const height = bytes.readUInt32BE(20);
-  if (width !== 1080 || height < 900) throw new Error(`买票战报尺寸异常：${width}×${height}`);
+  if (width !== 1080 || height < 900) throw new Error(`今日策略战报尺寸异常：${width}×${height}`);
   if (process.env.BUY_REPORT_VERIFY_OUTPUT) await copyFile(filePath, process.env.BUY_REPORT_VERIFY_OUTPUT);
   await rm(filePath, { force: true });
 
   const layouts = await page.locator("#buy-report").evaluate((report) => {
     const grid = report.querySelector(".buy-report-grid");
     const card = grid?.querySelector(".buy-report-card");
-    if (!grid || !card) throw new Error("买票战报标的卡片缺失");
+    if (!grid || !card) throw new Error("今日策略战报标的卡片缺失");
     return [1, 2, 3, 4].map(count => {
       grid.className = `buy-report-grid buy-report-count-${count}`;
       while (grid.querySelectorAll(".buy-report-card").length < count) grid.appendChild(card.cloneNode(true));
@@ -69,8 +76,8 @@ try {
     });
   });
   const expected = [1, 2, 3, 2];
-  if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`买票战报标的布局异常：${JSON.stringify(layouts)}`);
-  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout }));
+  if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`今日策略战报标的布局异常：${JSON.stringify(layouts)}`);
+  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract }));
 } finally {
   await browser.close();
 }

@@ -9,6 +9,7 @@ import {
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 import { dedupeImportedTrades, type ImportTrade } from "@shared/tradeImport";
+import { normalizeTradeDateTime } from "@shared/tradeImport";
 
 let _db: ReturnType<typeof drizzle> | null = null;
 
@@ -105,11 +106,11 @@ const initialSettings = {
 } as const;
 
 const initialTrades: InsertTrade[] = [
-  { symbol: "600519.SH", stockName: "贵州茅台", buyPrice: 1685.5, sellPrice: 1798.6, buyDate: "2026-05-06", sellDate: "2026-05-07" },
-  { symbol: "300750.SZ", stockName: "宁德时代", buyPrice: 193.45, sellPrice: 206.91, buyDate: "2026-05-07", sellDate: "2026-05-08" },
-  { symbol: "601888.SH", stockName: "中国中免", buyPrice: 89.21, sellPrice: 95.98, buyDate: "2026-05-08", sellDate: "2026-05-09" },
-  { symbol: "000858.SZ", stockName: "五粮液", buyPrice: 152.3, sellPrice: 161.91, buyDate: "2026-05-09", sellDate: "2026-05-10" },
-  { symbol: "002594.SZ", stockName: "比亚迪", buyPrice: 245.6, sellPrice: 260.64, buyDate: "2026-05-10", sellDate: "2026-05-13" },
+  { symbol: "600519.SH", stockName: "贵州茅台", buyPrice: 1685.5, sellPrice: 1798.6, buyDate: "2026-05-06 09:35", sellDate: "2026-05-07 10:02" },
+  { symbol: "300750.SZ", stockName: "宁德时代", buyPrice: 193.45, sellPrice: 206.91, buyDate: "2026-05-07 10:18", sellDate: "2026-05-08 09:51" },
+  { symbol: "601888.SH", stockName: "中国中免", buyPrice: 89.21, sellPrice: 95.98, buyDate: "2026-05-08 13:22", sellDate: "2026-05-09 14:06" },
+  { symbol: "000858.SZ", stockName: "五粮液", buyPrice: 152.3, sellPrice: 161.91, buyDate: "2026-05-09 09:46", sellDate: "2026-05-10 10:15" },
+  { symbol: "002594.SZ", stockName: "比亚迪", buyPrice: 245.6, sellPrice: 260.64, buyDate: "2026-05-10 14:08", sellDate: "2026-05-13 09:38" },
 ];
 
 async function ensureDashboardSeed() {
@@ -131,7 +132,7 @@ export async function getDashboardSnapshot() {
   const db = await ensureDashboardSeed();
   const [settings] = await db.select().from(dashboardSettings).where(eq(dashboardSettings.id, 1)).limit(1);
   const records = await db.select().from(trades).orderBy(asc(trades.buyDate), asc(trades.id));
-  return { settings, trades: records };
+  return { settings, trades: records.map(record => ({ ...record, buyDate: normalizeTradeDateTime(record.buyDate), sellDate: record.sellDate ? normalizeTradeDateTime(record.sellDate) : null })) };
 }
 
 export async function updateDashboardSettings(values: {

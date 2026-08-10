@@ -6,8 +6,8 @@ describe("dashboard.bulkImportTrades", () => {
     const caller = appRouter.createCaller({} as never);
     const result = await caller.dashboard.bulkImportTrades({
       trades: [
-        { symbol: "", stockName: "测试股票", buyPrice: 0, sellPrice: 10, buyDate: "2026/05/01", sellDate: "2026-05-02" },
-        { symbol: "600000.SH", stockName: "测试股票", buyPrice: 10, sellPrice: -1, buyDate: "2026-05-01", sellDate: "2026-13-40" },
+        { symbol: "", stockName: "测试股票", buyPrice: 0, sellPrice: 10, buyDate: "2026/05/01 09:30", sellDate: "2026-05-02 10:00" },
+        { symbol: "600000.SH", stockName: "测试股票", buyPrice: 10, sellPrice: -1, buyDate: "2026-05-01 09:30", sellDate: "2026-13-40 10:00" },
       ],
     });
 
@@ -16,6 +16,6 @@ describe("dashboard.bulkImportTrades", () => {
     expect(result.issues[0]?.messages.join(" ")).toContain("股票代码不能为空");
     expect(result.issues[0]?.messages.join(" ")).toContain("买入价必须大于 0");
     expect(result.issues[1]?.messages.join(" ")).toContain("卖出价必须大于 0");
-    expect(result.issues[1]?.messages.join(" ")).toContain("日期不是有效的日历日期");
+    expect(result.issues[1]?.messages.join(" ")).toContain("交易时间应为有效的 YYYY-MM-DD HH:mm");
   });
 });

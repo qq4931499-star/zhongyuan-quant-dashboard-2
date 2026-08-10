@@ -4,22 +4,29 @@ import { z } from "zod";
 export type ImportTrade = Omit<QuantTrade, "id">;
 export type ImportRowIssue = { row: number; messages: string[] };
 
-function isCalendarDate(value: string) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
-  const [year, month, day] = value.split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+export function normalizeTradeDateTime(value: string) {
+  const trimmed = value.trim().replace("T", " ").replace(/\s+/g, " ");
+  return /^\d{4}-\d{2}-\d{2}$/.test(trimmed) ? `${trimmed} 00:00` : trimmed;
 }
 
-const importDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD").refine(isCalendarDate, "日期不是有效的日历日期");
+function isCalendarDateTime(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(value)) return false;
+  const [datePart, timePart] = value.split(" ");
+  const [year, month, day] = datePart!.split("-").map(Number);
+  const [hours, minutes] = timePart!.split(":").map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day, hours, minutes));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day && date.getUTCHours() === hours && date.getUTCMinutes() === minutes;
+}
+
+const importDateTimeSchema = z.string().trim().transform(normalizeTradeDateTime).refine(isCalendarDateTime, "交易时间应为有效的 YYYY-MM-DD HH:mm");
 
 export const tradeImportRowSchema = z.object({
   symbol: z.string().trim().min(1, "股票代码不能为空").max(32, "股票代码不得超过 32 个字符").transform(value => value.toUpperCase()),
   stockName: z.string().trim().min(1, "股票名称不能为空").max(80, "股票名称不得超过 80 个字符"),
   buyPrice: z.number().positive("买入价必须大于 0"),
   sellPrice: z.number().positive("卖出价必须大于 0").nullable().optional().transform(value => value ?? null),
-  buyDate: importDateSchema,
-  sellDate: importDateSchema.nullable().optional().transform(value => value ?? null),
+  buyDate: importDateTimeSchema,
+  sellDate: importDateTimeSchema.nullable().optional().transform(value => value ?? null),
 });
 
 export function validateTradeImportRows(candidates: unknown[]) {
