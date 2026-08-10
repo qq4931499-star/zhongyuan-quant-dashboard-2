@@ -47,6 +47,27 @@ try {
     return { safe, rowCount: rows.length, value };
   }));
   if (profitContract.some(item => !item.safe)) throw new Error(`今日策略战报收益率字段异常：${JSON.stringify(profitContract)}`);
+  const cardTextLayout = await page.locator("#buy-report .buy-report-card").evaluateAll(cards => cards.map((card, index) => {
+    const cardRect = card.getBoundingClientRect();
+    const name = card.querySelector("h2");
+    const code = card.querySelector("h2 small");
+    const rows = Array.from(card.querySelectorAll("dl div"));
+    if (!name || !code || rows.length !== 5) throw new Error(`第 ${index + 1} 张标的卡文字结构缺失`);
+    const rects = [name, code, ...rows.flatMap(row => [row.querySelector("dt"), row.querySelector("dd")])].map(node => node?.getBoundingClientRect());
+    const validRects = rects.filter(Boolean);
+    const inside = validRects.length === 12 && validRects.every(rect => rect.left >= cardRect.left + 12 && rect.right <= cardRect.right - 12 && rect.top >= cardRect.top + 12 && rect.bottom <= cardRect.bottom - 12);
+    const textNodes = [name, code, ...rows.flatMap(row => [row.querySelector("dt"), row.querySelector("dd")])];
+    const overflowFields = textNodes.map((node, textIndex) => node && ({ textIndex, text: node.textContent?.trim(), width: Math.round(node.clientWidth), scrollWidth: Math.round(node.scrollWidth) })).filter(field => field && field.scrollWidth > field.width);
+    const noOverflow = overflowFields.length === 0;
+    const fieldGaps = rows.every(row => {
+        const label = row.querySelector("dt");
+        const value = row.querySelector("dd");
+        return Boolean(label && value && label.getBoundingClientRect().right + 6 <= value.getBoundingClientRect().left);
+      });
+    const safe = inside && noOverflow && fieldGaps;
+    return { index, safe, inside, noOverflow, fieldGaps, overflowFields, cardWidth: Math.round(cardRect.width), nameWidth: Math.round(name.getBoundingClientRect().width), codeWidth: Math.round(code.getBoundingClientRect().width) };
+  }));
+  if (cardTextLayout.some(card => !card.safe)) throw new Error(`今日策略战报放大文字存在换行、重叠或越界：${JSON.stringify(cardTextLayout)}`);
   const logicIcons = await page.locator("#buy-report .buy-report-logic article svg").count();
   if (logicIcons !== 4) throw new Error(`选股逻辑图标数量异常：${logicIcons}`);
   const iconLayout = await page.locator("#buy-report .buy-report-logic").evaluate((logic) => {
@@ -91,7 +112,7 @@ try {
   });
   const expected = [1, 2, 3, 2];
   if (layouts.some((layout, index) => layout.columns !== expected[index])) throw new Error(`今日策略战报标的布局异常：${JSON.stringify(layouts)}`);
-  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract, profitContract, selectedSymbols, reportSymbols }));
+  console.log(JSON.stringify({ fileName: download.suggestedFilename(), width, height, layouts, iconLayout, dialogLayout, reportContract, profitContract, cardTextLayout, selectedSymbols, reportSymbols }));
 } finally {
   await browser.close();
 }

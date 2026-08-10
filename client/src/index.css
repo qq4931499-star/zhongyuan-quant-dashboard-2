@@ -89,3 +89,6 @@ button:disabled { cursor: wait; opacity: .7; }
 
 /* 交易明细：策略战报勾选源与分钟级时间的显式确认保存。 */
 .report-select-input { width: 18px; height: 18px; accent-color: #b61928; cursor: pointer; }.time-confirm-cell { min-width: 72px; text-align: center; }.time-confirm-button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-height: 30px; padding: 0 8px; border: 1px solid rgba(182,25,40,.45); border-radius: 5px; color: #b61928; background: rgba(182,25,40,.06); font-size: 11px; font-weight: 800; white-space: nowrap; }.time-confirm-button:hover { border-color: #b61928; background: #b61928; color: #fff; }.time-confirm-button:disabled { opacity: .5; }.time-confirm-button svg { width: 13px; height: 13px; }
+
+/* 今日策略战报：放大标的名称、代码与交易指标，确保三栏卡片在导出中仍完整单行显示。 */
+.buy-report-card { min-height: 468px; padding: 38px 18px 30px; }.buy-report-card h2 { margin-bottom: 20px; padding-bottom: 16px; font-size: 30px; line-height: 1.22; }.buy-report-card h2 small { margin-top: 8px; font-size: 18px; }.buy-report-card dl div { grid-template-columns: 82px minmax(0, 1fr); gap: 8px; padding: 14px 0; }.buy-report-card dt { font-size: 19px; }.buy-report-card dd { font-size: 19px; letter-spacing: -.1em; }.buy-report-card .buy-report-profit { font-size: 21px; }
