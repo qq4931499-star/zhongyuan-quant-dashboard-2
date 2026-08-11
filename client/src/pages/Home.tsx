@@ -243,7 +243,7 @@ export default function Home() {
   const utils = trpc.useUtils();
   const { data: snapshot, isLoading, isError } = trpc.dashboard.snapshot.useQuery(undefined, { refetchInterval: 5000, refetchOnWindowFocus: true });
   const settings = snapshot?.settings ?? DEFAULT_SETTINGS;
-  const trades = (snapshot?.trades ?? []) as QuantTrade[];
+  const trades = useMemo(() => ([...(snapshot?.trades ?? [])] as QuantTrade[]).sort((left, right) => right.buyDate.localeCompare(left.buyDate) || right.id - left.id), [snapshot?.trades]);
   const metrics = useMemo(() => calculateDashboardMetrics(trades), [trades]);
   const [titleDraft, setTitleDraft] = useState(settings.title);
   const [subtitleDraft, setSubtitleDraft] = useState(settings.subtitle);
@@ -303,16 +303,17 @@ export default function Home() {
     }
     if (value !== trade[field]) updateTrade.mutate({ id: trade.id, values: { [field]: value } });
   };
-  const getTimeDraft = (trade: QuantTrade) => timeDrafts[trade.id] ?? { buyDate: trade.buyDate.replace(" ", "T"), sellDate: trade.sellDate?.replace(" ", "T") ?? "" };
+  const toDateTimeLocalValue = (value: string | null) => value ? normalizeTradeDateTime(value).replace(" ", "T") : "";
+  const getTimeDraft = (trade: QuantTrade) => timeDrafts[trade.id] ?? { buyDate: toDateTimeLocalValue(trade.buyDate), sellDate: toDateTimeLocalValue(trade.sellDate) };
   const updateTimeDraft = (trade: QuantTrade, field: "buyDate" | "sellDate", value: string) => setTimeDrafts(previous => ({ ...previous, [trade.id]: { ...getTimeDraft(trade), ...previous[trade.id], [field]: value } }));
-  const hasTimeChanges = (trade: QuantTrade) => { const draft = getTimeDraft(trade); return draft.buyDate !== trade.buyDate.replace(" ", "T") || draft.sellDate !== (trade.sellDate?.replace(" ", "T") ?? ""); };
+  const hasTimeChanges = (trade: QuantTrade) => { const draft = getTimeDraft(trade); return draft.buyDate !== toDateTimeLocalValue(trade.buyDate) || draft.sellDate !== toDateTimeLocalValue(trade.sellDate); };
   const confirmTradeTimes = (trade: QuantTrade) => {
     const draft = getTimeDraft(trade);
     const buyDate = normalizeTradeDateTime(draft.buyDate);
     const sellDate = draft.sellDate.trim() ? normalizeTradeDateTime(draft.sellDate) : null;
     if (!buyDate || (draft.sellDate.trim() && !sellDate)) { toast.error("请填写有效的年-月-日时分"); return; }
     updateTrade.mutate({ id: trade.id, values: { buyDate, sellDate } }, { onSuccess: updated => {
-      utils.dashboard.snapshot.setData(undefined, snapshot => snapshot ? { ...snapshot, trades: snapshot.trades.map(item => item.id === trade.id ? { ...item, buyDate: updated.buyDate, sellDate: updated.sellDate } : item) } : snapshot);
+      utils.dashboard.snapshot.setData(undefined, snapshot => snapshot ? { ...snapshot, trades: snapshot.trades.map(item => item.id === trade.id ? { ...item, buyDate, sellDate } : item) } : snapshot);
       setTimeDrafts(previous => { const { [trade.id]: _, ...rest } = previous; return rest; });
       void refresh();
       toast.success(`${trade.symbol} 时间已确认`);

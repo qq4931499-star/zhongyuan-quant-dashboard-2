@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   dashboardSettings,
@@ -131,7 +131,7 @@ async function ensureDashboardSeed() {
 export async function getDashboardSnapshot() {
   const db = await ensureDashboardSeed();
   const [settings] = await db.select().from(dashboardSettings).where(eq(dashboardSettings.id, 1)).limit(1);
-  const records = await db.select().from(trades).orderBy(asc(trades.buyDate), asc(trades.id));
+  const records = await db.select().from(trades).orderBy(desc(trades.buyDate), desc(trades.id));
   return { settings, trades: records.map(record => ({ ...record, buyDate: normalizeTradeDateTime(record.buyDate), sellDate: record.sellDate ? normalizeTradeDateTime(record.sellDate) : null })) };
 }
 
