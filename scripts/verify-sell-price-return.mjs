@@ -14,11 +14,8 @@ try {
   const rows = page.locator(".trade-table tbody tr");
   await rows.first().waitFor({ state: "visible", timeout: 20000 });
   const rowCount = await rows.count();
-  const targetIndex = await rows.evaluateAll(tableRows => {
-    const openTradeIndex = tableRows.findIndex(row => Array.from(row.querySelectorAll("input")).some(input => input.getAttribute("aria-label")?.endsWith("卖出时间") && input.value === ""));
-    return openTradeIndex >= 0 ? openTradeIndex : 0;
-  });
-  if (targetIndex < 0 || targetIndex >= rowCount) throw new Error("未找到可验证的交易明细行");
+  const targetIndex = 0;
+  if (rowCount === 0) throw new Error("未找到可验证的交易明细行");
 
   const targetRow = rows.nth(targetIndex);
   const symbol = await targetRow.locator(".symbol-input").inputValue();

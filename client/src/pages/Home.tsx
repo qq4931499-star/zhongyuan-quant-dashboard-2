@@ -312,7 +312,7 @@ export default function Home() {
     const buyDate = normalizeTradeDateTime(draft.buyDate);
     const sellDate = draft.sellDate.trim() ? normalizeTradeDateTime(draft.sellDate) : null;
     if (!buyDate || (draft.sellDate.trim() && !sellDate)) { toast.error("请填写有效的年-月-日时分"); return; }
-    updateTrade.mutate({ id: trade.id, values: { buyDate, sellDate } }, { onSuccess: updated => {
+    updateTrade.mutate({ id: trade.id, values: { buyDate, sellDate } }, { onSuccess: () => {
       utils.dashboard.snapshot.setData(undefined, snapshot => snapshot ? { ...snapshot, trades: snapshot.trades.map(item => item.id === trade.id ? { ...item, buyDate, sellDate } : item) } : snapshot);
       setTimeDrafts(previous => { const { [trade.id]: _, ...rest } = previous; return rest; });
       void refresh();

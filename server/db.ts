@@ -179,7 +179,9 @@ export async function bulkImportTrades(values: ImportTrade[]) {
 
 export async function updateTrade(id: number, values: Partial<InsertTrade> & { sellPrice?: number | null; sellDate?: string | null }) {
   const db = await ensureDashboardSeed();
-  await db.update(trades).set(values as Partial<InsertTrade>).where(eq(trades.id, id));
+  const patch = Object.fromEntries(Object.entries(values).filter(([, value]) => value !== undefined)) as Partial<InsertTrade>;
+  if (Object.keys(patch).length === 0) throw new Error("至少提交一个交易字段");
+  await db.update(trades).set(patch).where(eq(trades.id, id));
   const [record] = await db.select().from(trades).where(eq(trades.id, id)).limit(1);
   return record;
 }

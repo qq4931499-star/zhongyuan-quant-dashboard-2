@@ -4,10 +4,25 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, router } from "./_core/trpc";
 import { bulkImportTrades, createTrade, deleteTrade, getDashboardSnapshot, updateDashboardSettings, updateTrade } from "./db";
 import { z } from "zod";
-import { tradeImportRowSchema, validateTradeImportRows } from "@shared/tradeImport";
+import { normalizeTradeDateTime, tradeImportRowSchema, validateTradeImportRows } from "@shared/tradeImport";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD");
 const tradeFields = tradeImportRowSchema;
+const tradeDateTimeSchema = z.string().trim().transform(normalizeTradeDateTime).refine(value => {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})$/);
+  if (!match) return false;
+  const [, year, month, day, hour, minute] = match;
+  const date = new Date(Date.UTC(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute)));
+  return date.getUTCFullYear() === Number(year) && date.getUTCMonth() === Number(month) - 1 && date.getUTCDate() === Number(day) && date.getUTCHours() === Number(hour) && date.getUTCMinutes() === Number(minute);
+}, "交易时间应为有效的 YYYY-MM-DD HH:mm");
+const updateTradeFields = z.object({
+  symbol: z.string().trim().min(1, "股票代码不能为空").max(32, "股票代码不得超过 32 个字符").transform(value => value.toUpperCase()).optional(),
+  stockName: z.string().trim().min(1, "股票名称不能为空").max(80, "股票名称不得超过 80 个字符").optional(),
+  buyPrice: z.number().positive("买入价必须大于 0").optional(),
+  sellPrice: z.number().positive("卖出价必须大于 0").nullable().optional(),
+  buyDate: tradeDateTimeSchema.optional(),
+  sellDate: tradeDateTimeSchema.nullable().optional(),
+}).refine(values => Object.keys(values).length > 0, "至少提交一个交易字段");
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -42,7 +57,7 @@ export const appRouter = router({
         return { ...result, issues: [] };
       }),
     updateTrade: publicProcedure
-      .input(z.object({ id: z.number().int().positive(), values: tradeFields.partial() }))
+      .input(z.object({ id: z.number().int().positive(), values: updateTradeFields }))
       .mutation(({ input }) => updateTrade(input.id, input.values)),
     deleteTrade: publicProcedure.input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteTrade(input.id)),
   }),
