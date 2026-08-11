@@ -6,6 +6,7 @@ let symbol = "";
 let originalSellPrice = "";
 let originalSellTime = "";
 let restoreRequired = false;
+const formatTruncatedPercent = value => `${(Math.trunc(value * 100 * 100) / 100).toFixed(2)}%`;
 
 const nextMinute = value => {
   const minute = Number(value.slice(-2));
@@ -18,8 +19,12 @@ try {
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
   const rows = page.locator(".trade-table tbody tr");
   await rows.first().waitFor({ state: "visible", timeout: 20000 });
-  const targetIndex = await rows.evaluateAll(tableRows => tableRows.findIndex(row => row.querySelector('input[aria-label$=" 卖出时间"]')?.value === ""));
-  if (targetIndex < 0) throw new Error("未找到可验证的空卖出时间交易记录");
+  const targetIndex = await rows.evaluateAll(tableRows => tableRows.findIndex(row => {
+    const price = row.querySelector('input[aria-label$=" 卖出价"]');
+    const time = row.querySelector('input[aria-label$=" 卖出时间"]');
+    return price?.value === "" && Boolean(time?.value);
+  }));
+  if (targetIndex < 0) throw new Error("未找到“卖出时间已填写、卖出价待补填”的交易记录");
 
   const targetRow = rows.nth(targetIndex);
   symbol = await targetRow.locator(".symbol-input").inputValue();
@@ -34,18 +39,24 @@ try {
   originalSellPrice = await sellPriceInput().inputValue();
   originalSellTime = await sellTimeInput().inputValue();
   if (!Number.isFinite(buyPrice) || buyPrice <= 0 || !buyTime) throw new Error("待测交易缺少有效买入信息");
+  const wasInitiallyRealized = Boolean(originalSellPrice && originalSellTime);
   const initialRealizedTrades = Number((await page.locator(".metrics-section .metric-card").filter({ hasText: "总交易次数" }).locator("strong").textContent())?.replace(/\D/g, ""));
   const initialTrendPoints = await page.locator(".page-grid > .trend-panel .trend-data-label").count();
 
   const candidateSellPrice = Number((buyPrice * 1.1).toFixed(2));
   const newSellPrice = Math.abs(candidateSellPrice - Number(originalSellPrice)) < 0.005 ? Number((buyPrice * 1.11).toFixed(2)) : candidateSellPrice;
   const newSellTime = nextMinute(buyTime);
-  const expectedReturn = `${(((newSellPrice - buyPrice) / buyPrice) * 100).toFixed(2)}%`;
+  const expectedReturn = formatTruncatedPercent((newSellPrice - buyPrice) / buyPrice);
 
   await sellPriceInput().fill(newSellPrice.toFixed(2));
   restoreRequired = true;
   await sellPriceInput().blur();
   await returnTag().filter({ hasText: expectedReturn }).waitFor({ state: "visible", timeout: 10000 });
+  await page.waitForFunction(({ currentSymbol, expectedPrice, expectedTime }) => {
+    const price = document.querySelector(`input[aria-label="${currentSymbol} 卖出价"]`);
+    const time = document.querySelector(`input[aria-label="${currentSymbol} 卖出时间"]`);
+    return price?.value === expectedPrice && time?.value === expectedTime;
+  }, { currentSymbol: symbol, expectedPrice: newSellPrice.toFixed(2), expectedTime: originalSellTime }, { timeout: 10000 });
   await sellTimeInput().fill(newSellTime);
   await confirmButton().waitFor({ state: "visible", timeout: 5000 });
   await confirmButton().click();
@@ -63,8 +74,10 @@ try {
   }
   const realizedTrades = Number((await page.locator(".metrics-section .metric-card").filter({ hasText: "总交易次数" }).locator("strong").textContent())?.replace(/\D/g, ""));
   const trendPoints = await page.locator(".page-grid > .trend-panel .trend-data-label").count();
-  if (realizedTrades !== initialRealizedTrades + 1 || trendPoints !== initialTrendPoints + 1) {
-    throw new Error(`完整交易未即时纳入月度统计或累计趋势：${JSON.stringify({ initialRealizedTrades, realizedTrades, initialTrendPoints, trendPoints })}`);
+  const expectedRealizedTrades = initialRealizedTrades + (wasInitiallyRealized ? 0 : 1);
+  const expectedTrendPoints = initialTrendPoints + (wasInitiallyRealized ? 0 : 1);
+  if (realizedTrades !== expectedRealizedTrades || trendPoints !== expectedTrendPoints) {
+    throw new Error(`完整交易未即时纳入月度统计或累计趋势：${JSON.stringify({ initialRealizedTrades, realizedTrades, expectedRealizedTrades, initialTrendPoints, trendPoints, expectedTrendPoints })}`);
   }
   const exportCounts = await page.evaluate(() => {
     const marketingCard = Array.from(document.querySelectorAll("#marketing-export .metric-card")).find(card => card.querySelector(".metric-card-top span")?.textContent?.trim() === "总交易次数");

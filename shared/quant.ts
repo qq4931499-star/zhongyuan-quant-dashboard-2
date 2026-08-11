@@ -63,7 +63,12 @@ export function calculateDashboardMetrics(trades: QuantTrade[]): DashboardMetric
   };
 }
 
-export const formatPercent = (value: number, digits = 2) => `${(value * 100).toFixed(digits)}%`;
+export const formatPercent = (value: number, digits = 2) => {
+  const factor = 10 ** digits;
+  const percentage = value * 100;
+  const truncated = Math.trunc(percentage * factor) / factor;
+  return `${truncated.toFixed(digits)}%`;
+};
 
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat("zh-CN", { style: "currency", currency: "CNY", maximumFractionDigits: 2 }).format(value);

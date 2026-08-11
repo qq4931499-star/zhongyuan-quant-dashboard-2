@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDashboardMetrics, calculateTrend, getTradeReturn, hasSellPrice, isRealizedTrade, type QuantTrade } from "./quant";
+import { calculateDashboardMetrics, calculateTrend, formatPercent, getTradeReturn, hasSellPrice, isRealizedTrade, type QuantTrade } from "./quant";
 
 const sampleTrades: QuantTrade[] = [
   { id: 3, symbol: "BUY.GAIN", stockName: "上涨样例", buyPrice: 100, sellPrice: 110, buyDate: "2026-05-08 09:32", sellDate: "2026-05-09 10:05" },
@@ -11,6 +11,12 @@ describe("量化收益计算", () => {
     expect(getTradeReturn(sampleTrades[0])).toBeCloseTo(0.1, 12);
     expect(getTradeReturn(sampleTrades[1])).toBeCloseTo(-0.1, 12);
     expect(getTradeReturn({ buyPrice: 0, sellPrice: 100 })).toBe(0);
+  });
+
+  it("收益率展示向零截断到两位小数，不进行四舍五入", () => {
+    expect(formatPercent(0.099399)).toBe("9.93%");
+    expect(formatPercent(-0.099399)).toBe("-9.93%");
+    expect(formatPercent(0.12349, 3)).toBe("12.349%");
   });
 
   it("按卖出日期时间和记录序号排序，逐笔累计收益率", () => {

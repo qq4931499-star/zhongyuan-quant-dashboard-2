@@ -6,6 +6,8 @@ let page;
 let sellPriceInput;
 let originalSellPrice = "";
 let restoreRequired = false;
+const formatTruncatedPercent = value => `${(Math.trunc(value * 100 * 100) / 100).toFixed(2)}%`;
+const formatRoundedPercent = value => `${(value * 100).toFixed(2)}%`;
 
 try {
   page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, acceptDownloads: true });
@@ -26,9 +28,13 @@ try {
   originalSellPrice = await sellPriceInput.inputValue();
   if (!Number.isFinite(buyPrice) || buyPrice <= 0) throw new Error("买入价无效，无法验证收益率");
 
-  const proposedPrice = Number((buyPrice * 1.1).toFixed(2));
-  const targetSellPrice = Math.abs(proposedPrice - Number(originalSellPrice)) < 0.005 ? Number((buyPrice * 1.11).toFixed(2)) : proposedPrice;
-  const expectedReturn = `${(((targetSellPrice - buyPrice) / buyPrice) * 100).toFixed(2)}%`;
+  const roundedBasePrice = Number((buyPrice * 1.1).toFixed(2));
+  const candidatePrices = Array.from({ length: 20 }, (_, index) => Number((roundedBasePrice + (index - 10) * 0.01).toFixed(2)));
+  const targetSellPrice = candidatePrices.find(price => {
+    const returnRate = (price - buyPrice) / buyPrice;
+    return Math.abs(price - Number(originalSellPrice)) >= 0.005 && formatTruncatedPercent(returnRate) !== formatRoundedPercent(returnRate);
+  }) ?? roundedBasePrice;
+  const expectedReturn = formatTruncatedPercent((targetSellPrice - buyPrice) / buyPrice);
 
   await sellPriceInput.fill(targetSellPrice.toFixed(2));
   restoreRequired = true;
@@ -87,7 +93,7 @@ try {
         await currentInput.blur();
         const buyPrice = Number(await page.locator(`input[aria-label="${symbol} 买入价"]`).inputValue());
         const expectedRestoredReturn = originalSellPrice.trim() && Number.isFinite(buyPrice) && buyPrice > 0
-          ? `${(((Number(originalSellPrice) - buyPrice) / buyPrice) * 100).toFixed(2)}%`
+          ? formatTruncatedPercent((Number(originalSellPrice) - buyPrice) / buyPrice)
           : "-----";
         await page.waitForFunction(({ currentSymbol, expected }) => {
           const row = document.querySelector(`input[aria-label="${currentSymbol} 卖出价"]`)?.closest("tr");
