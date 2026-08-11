@@ -7,6 +7,13 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 1100 }, ac
 try {
   await page.goto("http://127.0.0.1:3000/", { waitUntil: "domcontentloaded" });
   await page.locator(".metric-card").first().waitFor({ state: "visible", timeout: 20000 });
+  const returnLabels = await page.evaluate(() => ({
+    page: document.querySelector(".page-grid > .trend-panel .final-return span")?.textContent?.trim(),
+    marketing: document.querySelector("#marketing-export .export-footer strong")?.textContent?.trim(),
+    strategy: Array.from(document.querySelectorAll("#strategy-poster .poster-metric")).find(card => card.querySelector("span")?.textContent?.trim() === "累计收益")?.querySelector("span")?.textContent?.trim(),
+    hasFinal: document.body.textContent?.includes("FINAL") ?? false,
+  }));
+  if (returnLabels.page !== "总收益率" || !returnLabels.marketing?.startsWith("总收益率 ") || returnLabels.strategy !== "累计收益" || returnLabels.hasFinal) throw new Error(`收益率标签文案异常：${JSON.stringify(returnLabels)}`);
   const downloadAndVerify = async (buttonName, minHeight, maxHeight, outputPath) => {
     await page.getByRole("button", { name: buttonName }).click();
     const dialog = page.locator(".export-options-dialog");
@@ -46,7 +53,7 @@ try {
   };
   const marketing = await downloadAndVerify("导出营销图", 900, 1450, process.env.EXPORT_VERIFY_OUTPUT);
   const poster = await downloadAndVerify("策略汇总海报", 900, 1500, process.env.POSTER_VERIFY_OUTPUT);
-  console.log(JSON.stringify({ marketing, poster }));
+  console.log(JSON.stringify({ returnLabels, marketing, poster }));
 } finally {
   await browser.close();
 }

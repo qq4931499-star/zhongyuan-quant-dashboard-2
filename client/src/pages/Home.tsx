@@ -137,7 +137,7 @@ function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; expo
           <p className="eyebrow">Performance curve</p>
           <h2>累计收益趋势</h2>
         </div>
-        <div className="final-return"><span>最终累计收益率</span><strong>{formatPercent(finalReturn)}</strong></div>
+        <div className="final-return"><span>总收益率</span><strong>{formatPercent(finalReturn)}</strong></div>
       </div>
       <div className="chart-wrap" style={{ height: chartHeight }}>
         {trend.length === 0 ? <div className="chart-empty"><TrendingUp /><span>暂无交易数据，新增交易后将自动生成收益趋势。</span></div> : <ResponsiveContainer width="100%" height="100%">
@@ -185,7 +185,7 @@ function MarketingExport({ settings, trades, detailTrades }: { settings: Setting
         <thead><tr><th>#</th><th>股票</th><th>买入</th><th>卖出</th><th>卖出日</th><th>收益率</th></tr></thead>
         <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{String(index + 1).padStart(2, "0")}</td><td><b>{trade.symbol}</b><span>{trade.stockName}</span></td><td>{trade.buyPrice.toFixed(2)}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate?.slice(5) ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
       </table>
-      <footer className="export-footer"><span>中圆量化 · 数据维护于云端</span><strong>FINAL {formatPercent(metrics.finalCumulativeReturn)}</strong></footer>
+      <footer className="export-footer"><span>中圆量化 · 数据维护于云端</span><strong>总收益率 {formatPercent(metrics.finalCumulativeReturn)}</strong></footer>
     </section>
   );
 }

@@ -37,8 +37,9 @@ try {
     cardBadges: report.querySelectorAll(".buy-report-badge").length,
     logicTitle: report.querySelector(".buy-report-logic > span")?.textContent?.trim() ?? "",
     buyTime: report.querySelector(".buy-report-card dl div:nth-child(2) dd")?.textContent?.trim(),
+    hasFinal: report.textContent?.includes("FINAL") ?? false,
   }));
-  if (reportContract.title !== "今日策略战报" || reportContract.cardBadges !== 0 || reportContract.logicTitle || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(reportContract.buyTime ?? "")) throw new Error(`今日策略战报标题、卡片或分钟时间展示异常：${JSON.stringify(reportContract)}`);
+  if (reportContract.title !== "今日策略战报" || reportContract.cardBadges !== 0 || reportContract.logicTitle || reportContract.hasFinal || !/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(reportContract.buyTime ?? "")) throw new Error(`今日策略战报标题、卡片、分钟时间或 FINAL 文案异常：${JSON.stringify(reportContract)}`);
   const profitContract = await page.locator("#buy-report .buy-report-card").evaluateAll(cards => cards.map(card => {
     const rows = Array.from(card.querySelectorAll("dl div"));
     const profitRow = rows.find(row => row.querySelector("dt")?.textContent?.trim() === "收益率");
