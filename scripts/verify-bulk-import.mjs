@@ -23,7 +23,7 @@ try {
   if (!template.suggestedFilename().endsWith(".xlsx")) throw new Error("模板下载格式异常");
 
   const firstRow = await page.locator(".trade-table tbody tr").first().locator("input").evaluateAll(inputs => inputs.map(input => input.value));
-  const [symbol, stockName, buyPrice, sellPrice, buyDate, sellDate] = firstRow;
+  const [, symbol, stockName, buyPrice, sellPrice, buyDate, sellDate] = firstRow;
   const csv = `股票代码,股票名称,买入价,卖出价,买入日期,卖出日期\n${symbol},${stockName},${buyPrice},${sellPrice},${buyDate},${sellDate}\n`;
   await page.locator(".import-dropzone input[type=file]").setInputFiles({ name: "duplicate-trade.csv", mimeType: "text/csv", buffer: Buffer.from(csv, "utf8") });
   await page.waitForTimeout(500);
@@ -33,7 +33,7 @@ try {
   await page.getByText("已导入 0 条交易").waitFor({ state: "visible", timeout: 15000 });
   await page.getByRole("button", { name: "批量导入" }).click();
   const workbook = utils.book_new();
-  utils.book_append_sheet(workbook, utils.json_to_sheet([{ "股票代码": symbol, "股票名称": stockName, "买入价": Number(buyPrice), "卖出价": Number(sellPrice), "买入日期": buyDate, "卖出日期": sellDate }]), "交易明细");
+  utils.book_append_sheet(workbook, utils.json_to_sheet([{ "股票代码": symbol, "股票名称": stockName, "买入价": Number(buyPrice), "卖出价": sellPrice ? Number(sellPrice) : "", "买入日期": buyDate, "卖出日期": sellDate }]), "交易明细");
   await page.locator(".import-dropzone input[type=file]").setInputFiles({ name: "duplicate-trade.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", buffer: write(workbook, { type: "buffer", bookType: "xlsx" }) });
   await page.getByRole("button", { name: /导入 1 条交易/ }).waitFor({ state: "visible" });
   await page.getByRole("button", { name: /导入 1 条交易/ }).click();

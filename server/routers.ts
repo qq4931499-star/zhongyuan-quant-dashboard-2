@@ -5,6 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { bulkImportTrades, createTrade, deleteTrade, getDashboardSnapshot, updateDashboardSettings, updateTrade } from "./db";
 import { z } from "zod";
 import { normalizeTradeDateTime, tradeImportRowSchema, validateTradeImportRows } from "@shared/tradeImport";
+import { parseAStockIdentitySearch, type StockIdentity } from "@shared/stockIdentity";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD");
 const tradeFields = tradeImportRowSchema;
@@ -23,6 +24,30 @@ const updateTradeFields = z.object({
   buyDate: tradeDateTimeSchema.optional(),
   sellDate: tradeDateTimeSchema.nullable().optional(),
 }).refine(values => Object.keys(values).length > 0, "至少提交一个交易字段");
+
+const stockIdentityCache = new Map<string, { value: StockIdentity | null; expiresAt: number }>();
+
+async function lookupAStockIdentity(query: string): Promise<StockIdentity | null> {
+  const normalizedQuery = query.trim();
+  const cacheKey = normalizedQuery.toLowerCase();
+  const cached = stockIdentityCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+
+  const searchTerms = [normalizedQuery, normalizedQuery.slice(0, 2)].filter((term, index, terms) => term && terms.indexOf(term) === index);
+  let result: StockIdentity | null = null;
+  for (const term of searchTerms) {
+    const url = new URL("https://smartbox.gtimg.cn/s3/");
+    url.searchParams.set("q", term);
+    url.searchParams.set("t", "all");
+    const response = await fetch(url, { signal: AbortSignal.timeout(4_000) });
+    if (!response.ok) continue;
+    const payload = await response.text();
+    const match = parseAStockIdentitySearch(payload, normalizedQuery);
+    if (match) { result = match; break; }
+  }
+  stockIdentityCache.set(cacheKey, { value: result, expiresAt: Date.now() + 10 * 60_000 });
+  return result;
+}
 
 export const appRouter = router({
     // if you need to use socket.io, read and register route in server/_core/index.ts, all api should start with '/api/' so that the gateway can route correctly
@@ -47,6 +72,15 @@ export const appRouter = router({
         endDate: dateSchema.optional(),
       }).refine(value => Object.keys(value).length > 0, "至少提交一个配置字段"))
       .mutation(({ input }) => updateDashboardSettings(input)),
+    lookupStockIdentity: publicProcedure
+      .input(z.object({ query: z.string().trim().min(1, "请输入股票代码或名称").max(80, "股票代码或名称不得超过 80 个字符") }))
+      .query(async ({ input }) => {
+        try {
+          return await lookupAStockIdentity(input.query);
+        } catch {
+          return null;
+        }
+      }),
     createTrade: publicProcedure.input(tradeFields).mutation(({ input }) => createTrade(input)),
     bulkImportTrades: publicProcedure
       .input(z.object({ trades: z.array(z.unknown()).min(1, "请至少导入一条交易记录").max(500, "单次最多导入 500 条交易记录") }))

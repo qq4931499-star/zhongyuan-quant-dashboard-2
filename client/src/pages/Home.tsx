@@ -272,6 +272,8 @@ export default function Home() {
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedReportTradeIds, setSelectedReportTradeIds] = useState<number[]>([]);
   const [timeDrafts, setTimeDrafts] = useState<Record<number, { buyDate: string; sellDate: string }>>({});
+  const [identityDrafts, setIdentityDrafts] = useState<Record<number, { symbol: string; stockName: string }>>({});
+  const [newTradeIdentity, setNewTradeIdentity] = useState({ symbol: "", stockName: "" });
   const [importRows, setImportRows] = useState<ImportTrade[]>([]);
   const [importIssues, setImportIssues] = useState<ImportIssue[]>([]);
   const [importFileName, setImportFileName] = useState("");
@@ -289,6 +291,7 @@ export default function Home() {
   const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   const reportShortcutDates = useMemo(() => Array.from(new Set([today, yesterday, ...trades.map(trade => trade.buyDate.slice(0, 10))])).sort((a, b) => b.localeCompare(a)).slice(0, 6), [today, yesterday, trades]);
   const updateSettings = trpc.dashboard.updateSettings.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
+  const lookupStockIdentity = (query: string) => utils.dashboard.lookupStockIdentity.fetch({ query });
   const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: updated => {
     if (updated) {
       utils.dashboard.snapshot.setData(undefined, snapshot => snapshot ? {
@@ -299,7 +302,7 @@ export default function Home() {
     void refresh();
   }, onError: error => toast.error(error.message) });
   const deleteTrade = trpc.dashboard.deleteTrade.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
-  const createTrade = trpc.dashboard.createTrade.useMutation({ onSuccess: () => { refresh(); setIsModalOpen(false); toast.success("交易已保存"); }, onError: error => toast.error(error.message) });
+  const createTrade = trpc.dashboard.createTrade.useMutation({ onSuccess: () => { refresh(); setIsModalOpen(false); setNewTradeIdentity({ symbol: "", stockName: "" }); toast.success("交易已保存"); }, onError: error => toast.error(error.message) });
   const bulkImportTrades = trpc.dashboard.bulkImportTrades.useMutation();
 
   const persistSetting = (field: keyof Settings, value: string) => {
@@ -317,6 +320,38 @@ export default function Home() {
       return;
     }
     if (value !== trade[field]) updateTrade.mutate({ id: trade.id, values: { [field]: value } });
+  };
+  const getIdentityDraft = (trade: QuantTrade) => identityDrafts[trade.id] ?? { symbol: trade.symbol, stockName: trade.stockName };
+  const updateIdentityDraft = (trade: QuantTrade, field: "symbol" | "stockName", value: string) => setIdentityDrafts(previous => ({ ...previous, [trade.id]: { ...getIdentityDraft(trade), ...previous[trade.id], [field]: value } }));
+  const resolveIdentity = async (query: string, field: "symbol" | "stockName") => {
+    const normalizedQuery = query.trim();
+    if (!normalizedQuery) return null;
+    try {
+      const match = await lookupStockIdentity(normalizedQuery);
+      if (!match) return null;
+      return field === "symbol" ? { symbol: normalizedQuery, stockName: match.stockName } : match;
+    } catch {
+      return null;
+    }
+  };
+  const confirmTradeIdentity = async (trade: QuantTrade, field: "symbol" | "stockName") => {
+    const draft = getIdentityDraft(trade);
+    const value = draft[field].trim();
+    if (!value) { toast.error("股票代码和名称不能为空"); return; }
+    const match = await resolveIdentity(value, field);
+    const values = match ?? { [field]: value };
+    const nextDraft = { ...draft, ...values };
+    setIdentityDrafts(previous => ({ ...previous, [trade.id]: nextDraft }));
+    if (match || nextDraft.symbol !== trade.symbol || nextDraft.stockName !== trade.stockName) updateTrade.mutate({ id: trade.id, values: nextDraft });
+    if (match) toast.success(`已补全：${match.symbol} · ${match.stockName}`);
+    else toast.message("未找到唯一的 A 股精确匹配，已保留手工填写内容");
+  };
+  const confirmNewTradeIdentity = async (field: "symbol" | "stockName") => {
+    const value = newTradeIdentity[field].trim();
+    if (!value) return;
+    const match = await resolveIdentity(value, field);
+    if (match) { setNewTradeIdentity(previous => ({ ...previous, ...match })); toast.success(`已补全：${match.symbol} · ${match.stockName}`); }
+    else toast.message("未找到唯一的 A 股精确匹配，已保留手工填写内容");
   };
   const toDateTimeLocalValue = (value: string | null) => value ? normalizeTradeDateTime(value).replace(" ", "T") : "";
   const getTimeDraft = (trade: QuantTrade) => timeDrafts[trade.id] ?? { buyDate: toDateTimeLocalValue(trade.buyDate), sellDate: toDateTimeLocalValue(trade.sellDate) };
@@ -345,7 +380,7 @@ export default function Home() {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
     createTrade.mutate({
-      symbol: String(form.get("symbol") ?? ""), stockName: String(form.get("stockName") ?? ""),
+      symbol: newTradeIdentity.symbol.trim(), stockName: newTradeIdentity.stockName.trim(),
       buyPrice: Number(form.get("buyPrice")), sellPrice: String(form.get("sellPrice") ?? "").trim() ? Number(form.get("sellPrice")) : null,
       buyDate: normalizeTradeDateTime(String(form.get("buyDate") ?? "")), sellDate: String(form.get("sellDate") ?? "").trim() ? normalizeTradeDateTime(String(form.get("sellDate"))) : null,
     });
@@ -511,8 +546,8 @@ export default function Home() {
                 {trades.length === 0 ? <tr><td colSpan={11}><div className="table-empty"><TrendingUp /><span>暂无交易记录</span><button onClick={() => setIsModalOpen(true)}>新增第一笔交易</button></div></td></tr> : trades.map((trade, index) => <tr key={trade.id}>
                   <td><input className="report-select-input" aria-label={`选择 ${trade.symbol} 用于今日策略战报`} type="checkbox" checked={selectedReportTradeIds.includes(trade.id)} onChange={event => toggleReportTrade(trade.id, event.target.checked)} /></td>
                   <td><span className="row-number">{String(index + 1).padStart(2, "0")}</span></td>
-                  <td><input aria-label={`${trade.symbol} 股票代码`} className="cell-input symbol-input" defaultValue={trade.symbol} maxLength={32} onBlur={event => persistTrade(trade, "symbol", event.target.value)} /></td>
-                  <td><input aria-label={`${trade.symbol} 股票名称`} className="cell-input" defaultValue={trade.stockName} maxLength={80} onBlur={event => persistTrade(trade, "stockName", event.target.value)} /></td>
+                  <td><input aria-label={`${trade.symbol} 股票代码`} className="cell-input symbol-input" value={getIdentityDraft(trade).symbol} maxLength={32} onChange={event => updateIdentityDraft(trade, "symbol", event.target.value)} onBlur={() => void confirmTradeIdentity(trade, "symbol")} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></td>
+                  <td><input aria-label={`${trade.symbol} 股票名称`} className="cell-input" value={getIdentityDraft(trade).stockName} maxLength={80} onChange={event => updateIdentityDraft(trade, "stockName", event.target.value)} onBlur={() => void confirmTradeIdentity(trade, "stockName")} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></td>
                   <td><input aria-label={`${trade.symbol} 买入价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.buyPrice} onBlur={event => persistTrade(trade, "buyPrice", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 卖出价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.sellPrice ?? ""} placeholder="-----" onBlur={event => persistTrade(trade, "sellPrice", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 买入时间`} className="cell-input date-cell-input" type="datetime-local" value={getTimeDraft(trade).buyDate} onChange={event => updateTimeDraft(trade, "buyDate", event.target.value)} /></td>
@@ -530,7 +565,7 @@ export default function Home() {
         <footer className="site-footer"><BrandLogo /><span>中圆量化收益分析仪表板</span><span>数据由公开协作成员共同维护</span><span>© 2026</span></footer>
       </div>
 
-      {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<input name="symbol" required maxLength={32} placeholder="600519.SH" /></label><label>股票名称<input name="stockName" required maxLength={80} placeholder="贵州茅台" /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价（可留空）<input name="sellPrice" type="number" min="0.01" step="0.01" placeholder="-----" /></label><label>买入时间<input name="buyDate" required type="datetime-local" defaultValue={`${settings.startDate}T00:00`} /></label><label>卖出时间（可留空）<input name="sellDate" type="datetime-local" /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
+      {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<input name="symbol" required maxLength={32} placeholder="600519" value={newTradeIdentity.symbol} onChange={event => setNewTradeIdentity(previous => ({ ...previous, symbol: event.target.value }))} onBlur={() => void confirmNewTradeIdentity("symbol")} /></label><label>股票名称<input name="stockName" required maxLength={80} placeholder="贵州茅台" value={newTradeIdentity.stockName} onChange={event => setNewTradeIdentity(previous => ({ ...previous, stockName: event.target.value }))} onBlur={() => void confirmNewTradeIdentity("stockName")} /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价（可留空）<input name="sellPrice" type="number" min="0.01" step="0.01" placeholder="-----" /></label><label>买入时间<input name="buyDate" required type="datetime-local" defaultValue={`${settings.startDate}T00:00`} /></label><label>卖出时间（可留空）<input name="sellDate" type="datetime-local" /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
 
       <Dialog open={isImportOpen} onOpenChange={open => { setIsImportOpen(open); if (!open) resetImport(); }}>
         <DialogContent className="import-dialog" showCloseButton={false}>
