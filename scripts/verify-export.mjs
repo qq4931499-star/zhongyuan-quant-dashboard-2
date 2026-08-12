@@ -16,6 +16,14 @@ try {
     marketingMetricDetails: document.querySelectorAll("#marketing-export .metric-card small").length,
   }));
   if (returnLabels.page !== "总收益率" || !returnLabels.marketing?.startsWith("总收益率 ") || returnLabels.strategy !== "累计收益" || returnLabels.hasFinal || returnLabels.pageMetricDetails !== 0 || returnLabels.marketingMetricDetails !== 0) throw new Error(`收益率标签或指标卡说明文案异常：${JSON.stringify(returnLabels)}`);
+  const exportBuyOrder = await page.evaluate(() => {
+    const getDates = selector => Array.from(document.querySelectorAll(selector)).map(row => row.getAttribute("data-buy-date") ?? "");
+    const marketing = getDates("#marketing-export .export-trade-table tbody tr");
+    const strategy = getDates("#strategy-poster .poster-trade-table tbody tr");
+    const ascending = dates => dates.length > 0 && dates.every((date, index) => index === 0 || dates[index - 1].localeCompare(date) <= 0);
+    return { marketing, strategy, marketingAscending: ascending(marketing), strategyAscending: ascending(strategy), matching: marketing.join("|") === strategy.join("|") };
+  });
+  if (!exportBuyOrder.marketingAscending || !exportBuyOrder.strategyAscending || !exportBuyOrder.matching) throw new Error(`导出交易明细买入日期排序异常：${JSON.stringify(exportBuyOrder)}`);
   const verifyMetricCardLayout = async selector => page.locator(selector).evaluateAll(cards => {
     const measurements = cards.map(card => {
       const cardRect = card.getBoundingClientRect();
@@ -100,7 +108,7 @@ try {
     return { valid, firstRowGap, secondRowGap, rowGap, measurements };
   });
   if (!mobileMetricLayout.valid) throw new Error(`移动端月度关键指标卡居中或间距异常：${JSON.stringify(mobileMetricLayout)}`);
-  console.log(JSON.stringify({ returnLabels, metricLayouts, mobileMetricLayout, marketing, poster }));
+  console.log(JSON.stringify({ returnLabels, exportBuyOrder, metricLayouts, mobileMetricLayout, marketing, poster }));
 } finally {
   await browser.close();
 }

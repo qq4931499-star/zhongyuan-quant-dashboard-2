@@ -182,7 +182,7 @@ function MarketingExport({ settings, trades, detailTrades }: { settings: Setting
       <div className="export-table-title"><span>交易明细</span><span>展示 {detailTrades.length} / {trades.length}</span></div>
       <table className="export-trade-table">
         <thead><tr><th>#</th><th>股票</th><th>买入</th><th>卖出</th><th>卖出日</th><th>收益率</th></tr></thead>
-        <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{String(index + 1).padStart(2, "0")}</td><td><b>{trade.symbol}</b><span>{trade.stockName}</span></td><td>{trade.buyPrice.toFixed(2)}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate?.slice(5) ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
+        <tbody>{detailTrades.map((trade, index) => <tr key={trade.id} data-buy-date={trade.buyDate}><td>{String(index + 1).padStart(2, "0")}</td><td><b>{trade.symbol}</b><span>{trade.stockName}</span></td><td>{trade.buyPrice.toFixed(2)}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate?.slice(5) ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "positive" : "negative" : "pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
       </table>
       <footer className="export-footer"><span>中圆量化 · 数据维护于云端</span><strong>总收益率 {formatPercent(metrics.finalCumulativeReturn)}</strong></footer>
     </section>
@@ -216,7 +216,7 @@ function StrategyPoster({ settings, trades, detailTrades }: { settings: Settings
         <div className="poster-ledger-heading"><span>交易明细</span><b>（T+1交易策略 · 当前记录收益区间 {formatPercent(minReturn)} — {formatPercent(metrics.maximumReturn)}）</b></div>
         <table className="poster-trade-table">
           <thead><tr><th>序列</th><th>股票名称</th><th>股票代码</th><th>买入价格</th><th>买入时间</th><th>卖出价格</th><th>卖出时间</th><th>收益率</th></tr></thead>
-          <tbody>{detailTrades.map((trade, index) => <tr key={trade.id}><td>{index + 1}</td><td>{trade.stockName}</td><td>{trade.symbol}</td><td>{trade.buyPrice.toFixed(2)}</td><td>{trade.buyDate}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "poster-positive" : "poster-negative" : "poster-pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
+          <tbody>{detailTrades.map((trade, index) => <tr key={trade.id} data-buy-date={trade.buyDate}><td>{index + 1}</td><td>{trade.stockName}</td><td>{trade.symbol}</td><td>{trade.buyPrice.toFixed(2)}</td><td>{trade.buyDate}</td><td>{typeof trade.sellPrice === "number" ? trade.sellPrice.toFixed(2) : "-----"}</td><td>{trade.sellDate ?? "-----"}</td><td className={hasSellPrice(trade) ? getTradeReturn(trade) >= 0 ? "poster-positive" : "poster-negative" : "poster-pending"}>{hasSellPrice(trade) ? formatPercent(getTradeReturn(trade)) : "-----"}</td></tr>)}</tbody>
         </table>
       </div>
       <footer className="poster-footer"><strong>量行致远 · 衡守初心</strong><span>中圆量化，以数据洞察市场，以模型辅助研判，以风控守护每一次决策。</span></footer>
@@ -450,7 +450,7 @@ export default function Home() {
   const openExportOptions = (target: "marketing" | "strategy") => { setPendingExport(target); setIsExportOptionsOpen(true); };
   const confirmPosterExport = () => { setIsExportOptionsOpen(false); if (pendingExport === "strategy") exportStrategyPoster(); if (pendingExport === "marketing") exportMarketingImage(); };
   const resolvedExportCount = exportCount.trim().toLowerCase() === "全部" || exportCount.trim().toLowerCase() === "all" ? trades.length : Math.max(1, Math.min(trades.length, Number.parseInt(exportCount, 10) || 5));
-  const exportTrades = trades.slice(0, resolvedExportCount);
+  const exportTrades = trades.slice(0, resolvedExportCount).sort((left, right) => left.buyDate.localeCompare(right.buyDate) || left.id - right.id);
 
   if (isLoading) return <main className="loading-screen"><Loader2 className="spin" /><span>正在连接收益数据…</span></main>;
   if (isError) return <main className="loading-screen"><span>数据暂时不可用，请刷新页面后重试。</span></main>;
