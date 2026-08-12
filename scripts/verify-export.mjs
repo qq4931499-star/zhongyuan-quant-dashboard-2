@@ -50,6 +50,28 @@ try {
     marketing: await verifyMetricCardLayout("#marketing-export .metric-card"),
   };
   if (!metricLayouts.page.aligned || !metricLayouts.marketing.aligned) throw new Error(`指标卡移除说明文字后布局不稳定：${JSON.stringify(metricLayouts)}`);
+  const verifyTrendLabels = async selector => page.locator(selector).evaluateAll(charts => charts.map(chart => {
+    const chartRect = chart.getBoundingClientRect();
+    const labels = Array.from(chart.querySelectorAll(".trend-data-label")).map(label => {
+      const rect = label.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, text: label.textContent?.trim() ?? "" };
+    });
+    const ticks = Array.from(chart.querySelectorAll(".recharts-xAxis .recharts-cartesian-axis-tick-value")).map(tick => {
+      const rect = tick.getBoundingClientRect();
+      return { left: rect.left, right: rect.right, top: rect.top, bottom: rect.bottom, text: tick.textContent?.trim() ?? "" };
+    });
+    const overlaps = (left, right, padding = 2) => left.left < right.right + padding && left.right + padding > right.left && left.top < right.bottom + padding && left.bottom + padding > right.top;
+    const labelCollisions = labels.flatMap((label, index) => labels.slice(index + 1).filter(other => overlaps(label, other)).map(other => [label.text, other.text]));
+    const tickCollisions = ticks.flatMap((tick, index) => ticks.slice(index + 1).filter(other => overlaps(tick, other, 1)).map(other => [tick.text, other.text]));
+    const labelTickCollisions = labels.flatMap(label => ticks.filter(tick => overlaps(label, tick)).map(tick => [label.text, tick.text]));
+    const safe = labels.every(label => label.left >= chartRect.left && label.right <= chartRect.right && label.top >= chartRect.top && label.bottom <= chartRect.bottom);
+    return { valid: labels.length > 0 && labels.length <= 10 && ticks.length > 0 && labelCollisions.length === 0 && tickCollisions.length === 0 && labelTickCollisions.length === 0 && safe, labelCount: labels.length, tickCount: ticks.length, labelCollisions, tickCollisions, labelTickCollisions, safe };
+  }));
+  const trendLabelLayouts = {
+    page: await verifyTrendLabels(".page-grid > .trend-panel"),
+    marketing: await verifyTrendLabels("#marketing-export .trend-panel-export"),
+  };
+  if (!trendLabelLayouts.page.every(layout => layout.valid) || !trendLabelLayouts.marketing.every(layout => layout.valid)) throw new Error(`累计收益趋势标签发生重叠或越界：${JSON.stringify(trendLabelLayouts)}`);
   const downloadAndVerify = async (buttonName, minHeight, maxHeight, outputPath) => {
     await page.getByRole("button", { name: buttonName }).click();
     const dialog = page.locator(".export-options-dialog");
@@ -90,6 +112,9 @@ try {
   const marketing = await downloadAndVerify("导出营销图", 900, 1450, process.env.EXPORT_VERIFY_OUTPUT);
   const poster = await downloadAndVerify("策略汇总海报", 900, 1500, process.env.POSTER_VERIFY_OUTPUT);
   await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(100);
+  const mobileTrendLabelLayouts = await verifyTrendLabels(".page-grid > .trend-panel");
+  if (!mobileTrendLabelLayouts.every(layout => layout.valid)) throw new Error(`移动端累计收益趋势标签发生重叠或越界：${JSON.stringify(mobileTrendLabelLayouts)}`);
   const mobileMetricLayout = await page.locator(".metrics-section .metric-card").evaluateAll(cards => {
     const measurements = cards.map(card => {
       const cardRect = card.getBoundingClientRect();
@@ -108,7 +133,7 @@ try {
     return { valid, firstRowGap, secondRowGap, rowGap, measurements };
   });
   if (!mobileMetricLayout.valid) throw new Error(`移动端月度关键指标卡居中或间距异常：${JSON.stringify(mobileMetricLayout)}`);
-  console.log(JSON.stringify({ returnLabels, exportBuyOrder, metricLayouts, mobileMetricLayout, marketing, poster }));
+  console.log(JSON.stringify({ returnLabels, exportBuyOrder, metricLayouts, trendLabelLayouts, mobileTrendLabelLayouts, mobileMetricLayout, marketing, poster }));
 } finally {
   await browser.close();
 }

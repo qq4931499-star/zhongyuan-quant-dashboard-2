@@ -113,13 +113,25 @@ function MetricCard({ label, value, detail, tone = "navy" }: { label: string; va
   );
 }
 
-function TrendLabel({ x, y, index, value, lastIndex }: { x?: number; y?: number; index?: number; value?: number; lastIndex: number }) {
+function useViewportWidth() {
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === "undefined" ? 1440 : window.innerWidth);
+  useEffect(() => {
+    const updateViewportWidth = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", updateViewportWidth);
+    return () => window.removeEventListener("resize", updateViewportWidth);
+  }, []);
+  return viewportWidth;
+}
+
+function TrendLabel({ x, y, index, value, lastIndex, labelStep }: { x?: number; y?: number; index?: number; value?: number; lastIndex: number; labelStep: number }) {
   if (typeof x !== "number" || typeof y !== "number" || typeof value !== "number") return null;
   const isFirst = index === 0;
   const isLast = index === lastIndex;
-  const above = !isFirst && (index ?? 0) % 2 === 0;
+  const currentIndex = index ?? 0;
+  if (!isFirst && !isLast && currentIndex % labelStep !== 0) return null;
+  const above = !isFirst && !isLast && Math.floor(currentIndex / labelStep) % 2 === 1;
   return (
-    <text x={x + (isFirst ? 13 : isLast ? -13 : 0)} y={y + (isFirst ? 24 : above ? -15 : 24)} textAnchor={isFirst ? "start" : isLast ? "end" : "middle"} className="trend-data-label">
+    <text x={x + (isFirst ? 13 : isLast ? -13 : 0)} y={y + (isFirst || isLast ? -16 : above ? -16 : 25)} textAnchor={isFirst ? "start" : isLast ? "end" : "middle"} className="trend-data-label">
       {formatPercent(value)}
     </text>
   );
@@ -127,8 +139,12 @@ function TrendLabel({ x, y, index, value, lastIndex }: { x?: number; y?: number;
 
 function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; exportMode?: boolean }) {
   const trend = useMemo(() => calculateTrend(trades), [trades]);
+  const viewportWidth = useViewportWidth();
   const finalReturn = trend.at(-1)?.cumulativeReturn ?? 0;
   const chartHeight = exportMode ? 318 : 340;
+  const maxVisibleLabels = viewportWidth <= 690 ? 4 : exportMode ? 10 : 8;
+  const labelStep = Math.max(1, Math.ceil(trend.length / maxVisibleLabels));
+  const xAxisInterval = Math.max(0, Math.ceil(trend.length / maxVisibleLabels) - 1);
   return (
     <section className={`trend-panel ${exportMode ? "trend-panel-export" : ""}`}>
       <div className="section-heading">
@@ -142,7 +158,7 @@ function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; expo
         {trend.length === 0 ? <div className="chart-empty"><TrendingUp /><span>暂无交易数据，新增交易后将自动生成收益趋势。</span></div> : <ResponsiveContainer width="100%" height="100%">
           <LineChart data={trend} margin={{ top: 42, right: 46, left: 8, bottom: 8 }}>
             <CartesianGrid stroke="#ded8d0" strokeDasharray="2 5" vertical={false} />
-            <XAxis dataKey="date" padding={{ left: 18, right: 18 }} tickFormatter={value => value.slice(5).replace("-", "/")} tickLine={false} axisLine={false} tick={{ fill: "#657083", fontSize: 12, fontFamily: "DM Mono" }} />
+            <XAxis dataKey="date" interval={xAxisInterval} padding={{ left: 18, right: 18 }} tickFormatter={value => value.slice(5, 10).replace("-", "/")} tickLine={false} axisLine={false} tick={{ fill: "#657083", fontSize: 12, fontFamily: "DM Mono" }} />
             <YAxis tickFormatter={value => `${(value * 100).toFixed(0)}%`} width={48} tickLine={false} axisLine={false} tick={{ fill: "#657083", fontSize: 12, fontFamily: "DM Mono" }} />
             <Tooltip
               cursor={{ stroke: "#e5b172", strokeWidth: 1 }}
@@ -151,7 +167,7 @@ function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; expo
               contentStyle={{ background: "#172036", border: "none", borderRadius: 10, color: "#fff", fontSize: 12 }}
               labelStyle={{ color: "#e5b172" }}
             />
-            <Line type="monotone" dataKey="cumulativeReturn" stroke="#b61928" strokeWidth={3} dot={{ r: 4, fill: "#f7f4ef", stroke: "#b61928", strokeWidth: 2.5 }} activeDot={{ r: 6, fill: "#e5b172", stroke: "#b61928", strokeWidth: 2 }} label={<TrendLabel lastIndex={trend.length - 1} />} isAnimationActive={false} />
+            <Line type="monotone" dataKey="cumulativeReturn" stroke="#b61928" strokeWidth={3} dot={{ r: 4, fill: "#f7f4ef", stroke: "#b61928", strokeWidth: 2.5 }} activeDot={{ r: 6, fill: "#e5b172", stroke: "#b61928", strokeWidth: 2 }} label={<TrendLabel lastIndex={trend.length - 1} labelStep={labelStep} />} isAnimationActive={false} />
           </LineChart>
         </ResponsiveContainer>}
       </div>
