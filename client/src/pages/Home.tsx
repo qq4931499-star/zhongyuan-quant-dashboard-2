@@ -109,7 +109,6 @@ function MetricCard({ label, value, detail, tone = "navy" }: { label: string; va
     <article className={`metric-card metric-${tone}`}>
       <div className="metric-card-top"><span>{label}</span><span className="metric-marker" /></div>
       <strong className={lengthClass}>{value}</strong>
-      <small>{detail}</small>
     </article>
   );
 }

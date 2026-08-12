@@ -12,8 +12,30 @@ try {
     marketing: document.querySelector("#marketing-export .export-footer strong")?.textContent?.trim(),
     strategy: Array.from(document.querySelectorAll("#strategy-poster .poster-metric")).find(card => card.querySelector("span")?.textContent?.trim() === "累计收益")?.querySelector("span")?.textContent?.trim(),
     hasFinal: document.body.textContent?.includes("FINAL") ?? false,
+    pageMetricDetails: document.querySelectorAll(".metrics-section .metric-card small").length,
+    marketingMetricDetails: document.querySelectorAll("#marketing-export .metric-card small").length,
   }));
-  if (returnLabels.page !== "总收益率" || !returnLabels.marketing?.startsWith("总收益率 ") || returnLabels.strategy !== "累计收益" || returnLabels.hasFinal) throw new Error(`收益率标签文案异常：${JSON.stringify(returnLabels)}`);
+  if (returnLabels.page !== "总收益率" || !returnLabels.marketing?.startsWith("总收益率 ") || returnLabels.strategy !== "累计收益" || returnLabels.hasFinal || returnLabels.pageMetricDetails !== 0 || returnLabels.marketingMetricDetails !== 0) throw new Error(`收益率标签或指标卡说明文案异常：${JSON.stringify(returnLabels)}`);
+  const verifyMetricCardLayout = async selector => page.locator(selector).evaluateAll(cards => {
+    const measurements = cards.map(card => {
+      const cardRect = card.getBoundingClientRect();
+      const heading = card.querySelector(".metric-card-top");
+      const value = card.querySelector("strong");
+      if (!heading || !value) throw new Error("指标卡关键结构缺失");
+      const headingRect = heading.getBoundingClientRect();
+      const valueRect = value.getBoundingClientRect();
+      const inside = valueRect.left >= cardRect.left + 16 && valueRect.right <= cardRect.right - 16 && valueRect.top > headingRect.bottom + 16 && valueRect.bottom <= cardRect.bottom - 16;
+      return { width: Math.round(cardRect.width), height: Math.round(cardRect.height), valueTop: Math.round(valueRect.top - cardRect.top), valueBottom: Math.round(valueRect.bottom - cardRect.top), inside, hasDetail: Boolean(card.querySelector("small")) };
+    });
+    const reference = measurements[0];
+    const aligned = measurements.length === 4 && Boolean(reference) && measurements.every(metric => metric.inside && !metric.hasDetail && Math.abs(metric.height - reference.height) <= 1 && Math.abs(metric.valueBottom - reference.valueBottom) <= 2);
+    return { aligned, measurements };
+  });
+  const metricLayouts = {
+    page: await verifyMetricCardLayout(".metrics-section .metric-card"),
+    marketing: await verifyMetricCardLayout("#marketing-export .metric-card"),
+  };
+  if (!metricLayouts.page.aligned || !metricLayouts.marketing.aligned) throw new Error(`指标卡移除说明文字后布局不稳定：${JSON.stringify(metricLayouts)}`);
   const downloadAndVerify = async (buttonName, minHeight, maxHeight, outputPath) => {
     await page.getByRole("button", { name: buttonName }).click();
     const dialog = page.locator(".export-options-dialog");
@@ -53,7 +75,7 @@ try {
   };
   const marketing = await downloadAndVerify("导出营销图", 900, 1450, process.env.EXPORT_VERIFY_OUTPUT);
   const poster = await downloadAndVerify("策略汇总海报", 900, 1500, process.env.POSTER_VERIFY_OUTPUT);
-  console.log(JSON.stringify({ returnLabels, marketing, poster }));
+  console.log(JSON.stringify({ returnLabels, metricLayouts, marketing, poster }));
 } finally {
   await browser.close();
 }
