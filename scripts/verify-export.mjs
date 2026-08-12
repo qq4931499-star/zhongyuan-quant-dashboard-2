@@ -24,12 +24,18 @@ try {
       if (!heading || !value) throw new Error("指标卡关键结构缺失");
       const headingRect = heading.getBoundingClientRect();
       const valueRect = value.getBoundingClientRect();
-      const inside = valueRect.left >= cardRect.left + 16 && valueRect.right <= cardRect.right - 16 && valueRect.top > headingRect.bottom + 16 && valueRect.bottom <= cardRect.bottom - 16;
-      return { width: Math.round(cardRect.width), height: Math.round(cardRect.height), valueTop: Math.round(valueRect.top - cardRect.top), valueBottom: Math.round(valueRect.bottom - cardRect.top), inside, hasDetail: Boolean(card.querySelector("small")) };
+      const groupTop = headingRect.top - cardRect.top;
+      const groupBottom = valueRect.bottom - cardRect.top;
+      const groupCenterOffset = (groupTop + groupBottom) / 2 - cardRect.height / 2;
+      const inside = valueRect.left >= cardRect.left + 16 && valueRect.right <= cardRect.right - 16 && valueRect.top > headingRect.bottom + 12 && valueRect.bottom <= cardRect.bottom - 16;
+      const centered = Math.abs(groupCenterOffset) <= 8 && getComputedStyle(value).textAlign === "center" && getComputedStyle(heading).justifyContent === "center";
+      return { left: Math.round(cardRect.left), right: Math.round(cardRect.right), width: Math.round(cardRect.width), height: Math.round(cardRect.height), valueTop: Math.round(valueRect.top - cardRect.top), valueBottom: Math.round(valueRect.bottom - cardRect.top), groupCenterOffset: Math.round(groupCenterOffset), inside, centered, hasDetail: Boolean(card.querySelector("small")) };
     });
     const reference = measurements[0];
-    const aligned = measurements.length === 4 && Boolean(reference) && measurements.every(metric => metric.inside && !metric.hasDetail && Math.abs(metric.height - reference.height) <= 1 && Math.abs(metric.valueBottom - reference.valueBottom) <= 2);
-    return { aligned, measurements };
+    const gaps = measurements.slice(1).map((metric, index) => metric.left - measurements[index].right);
+    const consistentGaps = gaps.length === 3 && gaps.every(gap => gap >= 12 && Math.abs(gap - gaps[0]) <= 1);
+    const aligned = measurements.length === 4 && Boolean(reference) && consistentGaps && measurements.every(metric => metric.inside && metric.centered && !metric.hasDetail && Math.abs(metric.height - reference.height) <= 1 && Math.abs(metric.valueBottom - reference.valueBottom) <= 2);
+    return { aligned, gaps, measurements };
   });
   const metricLayouts = {
     page: await verifyMetricCardLayout(".metrics-section .metric-card"),
@@ -75,7 +81,26 @@ try {
   };
   const marketing = await downloadAndVerify("导出营销图", 900, 1450, process.env.EXPORT_VERIFY_OUTPUT);
   const poster = await downloadAndVerify("策略汇总海报", 900, 1500, process.env.POSTER_VERIFY_OUTPUT);
-  console.log(JSON.stringify({ returnLabels, metricLayouts, marketing, poster }));
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileMetricLayout = await page.locator(".metrics-section .metric-card").evaluateAll(cards => {
+    const measurements = cards.map(card => {
+      const cardRect = card.getBoundingClientRect();
+      const heading = card.querySelector(".metric-card-top");
+      const value = card.querySelector("strong");
+      if (!heading || !value) throw new Error("移动端指标卡关键结构缺失");
+      const headingRect = heading.getBoundingClientRect();
+      const valueRect = value.getBoundingClientRect();
+      const groupCenterOffset = ((headingRect.top - cardRect.top) + (valueRect.bottom - cardRect.top)) / 2 - cardRect.height / 2;
+      return { left: Math.round(cardRect.left), top: Math.round(cardRect.top), right: Math.round(cardRect.right), bottom: Math.round(cardRect.bottom), width: Math.round(cardRect.width), height: Math.round(cardRect.height), groupCenterOffset: Math.round(groupCenterOffset), safe: Math.abs(groupCenterOffset) <= 8 && valueRect.left >= cardRect.left + 8 && valueRect.right <= cardRect.right - 8 };
+    });
+    const firstRowGap = measurements[1].left - measurements[0].right;
+    const secondRowGap = measurements[3].left - measurements[2].right;
+    const rowGap = measurements[2].top - measurements[0].bottom;
+    const valid = measurements.length === 4 && measurements.every(metric => metric.safe && Math.abs(metric.height - measurements[0].height) <= 1) && Math.abs(firstRowGap - secondRowGap) <= 1 && firstRowGap >= 10 && rowGap >= 10 && Math.abs(measurements[0].top - measurements[1].top) <= 1 && Math.abs(measurements[2].top - measurements[3].top) <= 1;
+    return { valid, firstRowGap, secondRowGap, rowGap, measurements };
+  });
+  if (!mobileMetricLayout.valid) throw new Error(`移动端月度关键指标卡居中或间距异常：${JSON.stringify(mobileMetricLayout)}`);
+  console.log(JSON.stringify({ returnLabels, metricLayouts, mobileMetricLayout, marketing, poster }));
 } finally {
   await browser.close();
 }
