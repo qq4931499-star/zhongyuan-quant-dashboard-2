@@ -5,7 +5,7 @@ import { publicProcedure, router } from "./_core/trpc";
 import { bulkImportTrades, createTrade, deleteTrade, getDashboardSnapshot, updateDashboardSettings, updateTrade } from "./db";
 import { z } from "zod";
 import { normalizeTradeDateTime, tradeImportRowSchema, validateTradeImportRows } from "@shared/tradeImport";
-import { parseAStockIdentitySearch, type StockIdentity } from "@shared/stockIdentity";
+import { parseAStockIdentitySearch, parseAStockSearchCandidates, type StockIdentity, type StockSearchCandidate } from "@shared/stockIdentity";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "日期格式应为 YYYY-MM-DD");
 const tradeFields = tradeImportRowSchema;
@@ -26,6 +26,7 @@ const updateTradeFields = z.object({
 }).refine(values => Object.keys(values).length > 0, "至少提交一个交易字段");
 
 const stockIdentityCache = new Map<string, { value: StockIdentity | null; expiresAt: number }>();
+const stockCandidateCache = new Map<string, { value: StockSearchCandidate[]; expiresAt: number }>();
 
 async function lookupAStockIdentity(query: string): Promise<StockIdentity | null> {
   const normalizedQuery = query.trim();
@@ -46,6 +47,29 @@ async function lookupAStockIdentity(query: string): Promise<StockIdentity | null
     if (match) { result = match; break; }
   }
   stockIdentityCache.set(cacheKey, { value: result, expiresAt: Date.now() + 10 * 60_000 });
+  return result;
+}
+
+async function searchAStockCandidates(query: string): Promise<StockSearchCandidate[]> {
+  const normalizedQuery = query.trim();
+  const cacheKey = normalizedQuery.toLowerCase();
+  const cached = stockCandidateCache.get(cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached.value;
+  const searchTerms = [normalizedQuery, normalizedQuery.slice(0, 2)].filter((term, index, terms) => term && terms.indexOf(term) === index);
+  const candidates = new Map<string, StockSearchCandidate>();
+  for (const term of searchTerms) {
+    const url = new URL("https://smartbox.gtimg.cn/s3/");
+    url.searchParams.set("q", term);
+    url.searchParams.set("t", "all");
+    const response = await fetch(url, { signal: AbortSignal.timeout(4_000) });
+    if (!response.ok) continue;
+    parseAStockSearchCandidates(await response.text()).forEach(candidate => candidates.set(candidate.symbol, candidate));
+  }
+  const normalizedLower = normalizedQuery.toLowerCase();
+  const result = Array.from(candidates.values())
+    .filter(candidate => candidate.symbol.includes(normalizedQuery) || candidate.stockName.includes(normalizedQuery) || candidate.pinyin.toLowerCase().includes(normalizedLower))
+    .slice(0, 8);
+  stockCandidateCache.set(cacheKey, { value: result, expiresAt: Date.now() + 2 * 60_000 });
   return result;
 }
 
@@ -79,6 +103,15 @@ export const appRouter = router({
           return await lookupAStockIdentity(input.query);
         } catch {
           return null;
+        }
+      }),
+    searchStockCandidates: publicProcedure
+      .input(z.object({ query: z.string().trim().min(1, "请输入股票代码、名称或拼音缩写").max(80, "搜索关键词不得超过 80 个字符") }))
+      .query(async ({ input }) => {
+        try {
+          return await searchAStockCandidates(input.query);
+        } catch {
+          return [];
         }
       }),
     createTrade: publicProcedure.input(tradeFields).mutation(({ input }) => createTrade(input)),

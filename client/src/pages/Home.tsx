@@ -2,9 +2,10 @@ import { trpc } from "@/lib/trpc";
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, hasSellPrice, isRealizedTrade, type QuantTrade } from "@shared/quant";
 import { normalizeTradeDateTime } from "@shared/tradeImport";
+import type { StockSearchCandidate } from "@shared/stockIdentity";
 import html2canvas from "html2canvas";
 import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, FileUp, Loader2, Plus, ShieldCheck, Sparkles, Trash2, TrendingUp } from "lucide-react";
-import { ChangeEvent, FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { toast } from "sonner";
 import { read, utils as xlsxUtils, writeFile } from "xlsx";
@@ -87,6 +88,117 @@ function BrandLogo({ exportMode = false, src = BRAND_LOGO_URL }: { exportMode?: 
   return (
     <div className={`brand-logo ${exportMode ? "brand-logo-export" : ""}`}>
       <img data-export-logo={src} src={src} alt="中圆公司标志" />
+    </div>
+  );
+}
+
+function StockIdentityInput({
+  value,
+  onChange,
+  onCommit,
+  onSelect,
+  ariaLabel,
+  name,
+  placeholder,
+  className,
+  maxLength,
+  required = false,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onCommit: () => void;
+  onSelect: (candidate: StockSearchCandidate) => void;
+  ariaLabel: string;
+  name?: string;
+  placeholder?: string;
+  className?: string;
+  maxLength: number;
+  required?: boolean;
+}) {
+  const listId = useId();
+  const [isOpen, setIsOpen] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const selectingRef = useRef(false);
+  const searchInput = useMemo(() => ({ query: value.trim() }), [value]);
+  const searchEnabled = isFocused && searchInput.query.length >= 2;
+  const candidateQuery = trpc.dashboard.searchStockCandidates.useQuery(searchInput, { enabled: searchEnabled, retry: false, staleTime: 120_000 });
+  const candidates = candidateQuery.data ?? [];
+
+  useEffect(() => {
+    if (!searchEnabled) {
+      setIsOpen(false); setActiveIndex(-1);
+      return;
+    }
+    setIsOpen(true);
+    if (!candidateQuery.isFetching) setActiveIndex(candidates.length > 0 ? 0 : -1);
+  }, [candidateQuery.isFetching, candidates.length, searchEnabled]);
+
+  const selectCandidate = (candidate: StockSearchCandidate) => {
+    selectingRef.current = true;
+    setIsFocused(false);
+    onSelect(candidate);
+    setIsOpen(false);
+    setActiveIndex(-1);
+    window.setTimeout(() => { selectingRef.current = false; }, 0);
+  };
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      if (candidates.length > 0) { setIsOpen(true); setActiveIndex(index => Math.min(candidates.length - 1, Math.max(0, index + 1))); }
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      if (candidates.length > 0) { setIsOpen(true); setActiveIndex(index => Math.max(0, index - 1)); }
+    } else if (event.key === "Enter" && isOpen && activeIndex >= 0 && candidates[activeIndex]) {
+      event.preventDefault();
+      selectCandidate(candidates[activeIndex]!);
+    } else if (event.key === "Escape") {
+      setIsOpen(false);
+    }
+  };
+
+  return (
+    <div className="stock-identity-combobox">
+      <input
+        name={name}
+        aria-label={ariaLabel}
+        aria-autocomplete="list"
+        aria-controls={isOpen ? listId : undefined}
+        aria-expanded={isOpen}
+        aria-activedescendant={isOpen && activeIndex >= 0 ? `${listId}-${activeIndex}` : undefined}
+        autoComplete="off"
+        className={className}
+        maxLength={maxLength}
+        placeholder={placeholder}
+        required={required}
+        value={value}
+        onChange={event => onChange(event.target.value)}
+        onFocus={() => { setIsFocused(true); if (candidates.length > 0) setIsOpen(true); }}
+        onBlur={() => {
+          const shouldCommit = !selectingRef.current;
+          window.setTimeout(() => {
+          if (shouldCommit) onCommit();
+          setIsFocused(false);
+          setIsOpen(false);
+          }, 140);
+        }}
+        onKeyDown={handleKeyDown}
+      />
+      {isOpen && <div id={listId} className="stock-candidate-list" role="listbox" aria-label="股票搜索候选">
+        {candidateQuery.isFetching && <div className="stock-candidate-status">正在搜索…</div>}
+        {!candidateQuery.isFetching && candidates.length === 0 && <div className="stock-candidate-status">未找到 A 股候选，可继续手工填写</div>}
+        {candidates.map((candidate, index) => <button
+          key={candidate.symbol}
+          id={`${listId}-${index}`}
+          type="button"
+          role="option"
+          aria-selected={index === activeIndex}
+          className={index === activeIndex ? "active" : ""}
+          onMouseDown={() => { selectingRef.current = true; }}
+          onClick={() => selectCandidate(candidate)}
+        ><strong>{candidate.symbol}</strong><span>{candidate.stockName}</span><em>{candidate.pinyin}</em></button>)}
+      </div>}
     </div>
   );
 }
@@ -346,12 +458,22 @@ export default function Home() {
     if (match) toast.success(`已补全：${match.symbol} · ${match.stockName}`);
     else toast.message("未找到唯一的 A 股精确匹配，已保留手工填写内容");
   };
+  const selectTradeIdentityCandidate = (trade: QuantTrade, candidate: StockSearchCandidate) => {
+    const nextDraft = { symbol: candidate.symbol, stockName: candidate.stockName };
+    setIdentityDrafts(previous => ({ ...previous, [trade.id]: nextDraft }));
+    updateTrade.mutate({ id: trade.id, values: nextDraft });
+    toast.success(`已选择：${candidate.symbol} · ${candidate.stockName}`);
+  };
   const confirmNewTradeIdentity = async (field: "symbol" | "stockName") => {
     const value = newTradeIdentity[field].trim();
     if (!value) return;
     const match = await resolveIdentity(value, field);
-    if (match) { setNewTradeIdentity(previous => ({ ...previous, ...match })); toast.success(`已补全：${match.symbol} · ${match.stockName}`); }
+    if (match && (match.symbol !== newTradeIdentity.symbol || match.stockName !== newTradeIdentity.stockName)) { setNewTradeIdentity(previous => ({ ...previous, ...match })); toast.success(`已补全：${match.symbol} · ${match.stockName}`); }
     else toast.message("未找到唯一的 A 股精确匹配，已保留手工填写内容");
+  };
+  const selectNewTradeIdentityCandidate = (candidate: StockSearchCandidate) => {
+    setNewTradeIdentity({ symbol: candidate.symbol, stockName: candidate.stockName });
+    toast.success(`已选择：${candidate.symbol} · ${candidate.stockName}`);
   };
   const toDateTimeLocalValue = (value: string | null) => value ? normalizeTradeDateTime(value).replace(" ", "T") : "";
   const getTimeDraft = (trade: QuantTrade) => timeDrafts[trade.id] ?? { buyDate: toDateTimeLocalValue(trade.buyDate), sellDate: toDateTimeLocalValue(trade.sellDate) };
@@ -546,8 +668,8 @@ export default function Home() {
                 {trades.length === 0 ? <tr><td colSpan={11}><div className="table-empty"><TrendingUp /><span>暂无交易记录</span><button onClick={() => setIsModalOpen(true)}>新增第一笔交易</button></div></td></tr> : trades.map((trade, index) => <tr key={trade.id}>
                   <td><input className="report-select-input" aria-label={`选择 ${trade.symbol} 用于今日策略战报`} type="checkbox" checked={selectedReportTradeIds.includes(trade.id)} onChange={event => toggleReportTrade(trade.id, event.target.checked)} /></td>
                   <td><span className="row-number">{String(index + 1).padStart(2, "0")}</span></td>
-                  <td><input aria-label={`${trade.symbol} 股票代码`} className="cell-input symbol-input" value={getIdentityDraft(trade).symbol} maxLength={32} onChange={event => updateIdentityDraft(trade, "symbol", event.target.value)} onBlur={() => void confirmTradeIdentity(trade, "symbol")} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></td>
-                  <td><input aria-label={`${trade.symbol} 股票名称`} className="cell-input" value={getIdentityDraft(trade).stockName} maxLength={80} onChange={event => updateIdentityDraft(trade, "stockName", event.target.value)} onBlur={() => void confirmTradeIdentity(trade, "stockName")} onKeyDown={event => { if (event.key === "Enter") event.currentTarget.blur(); }} /></td>
+                  <td><StockIdentityInput ariaLabel={`${trade.symbol} 股票代码`} className="cell-input symbol-input" value={getIdentityDraft(trade).symbol} maxLength={32} onChange={value => updateIdentityDraft(trade, "symbol", value)} onCommit={() => void confirmTradeIdentity(trade, "symbol")} onSelect={candidate => selectTradeIdentityCandidate(trade, candidate)} /></td>
+                  <td><StockIdentityInput ariaLabel={`${trade.symbol} 股票名称`} className="cell-input" value={getIdentityDraft(trade).stockName} maxLength={80} onChange={value => updateIdentityDraft(trade, "stockName", value)} onCommit={() => void confirmTradeIdentity(trade, "stockName")} onSelect={candidate => selectTradeIdentityCandidate(trade, candidate)} /></td>
                   <td><input aria-label={`${trade.symbol} 买入价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.buyPrice} onBlur={event => persistTrade(trade, "buyPrice", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 卖出价`} className="cell-input price-input" type="number" min="0.01" step="0.01" defaultValue={trade.sellPrice ?? ""} placeholder="-----" onBlur={event => persistTrade(trade, "sellPrice", event.target.value)} /></td>
                   <td><input aria-label={`${trade.symbol} 买入时间`} className="cell-input date-cell-input" type="datetime-local" value={getTimeDraft(trade).buyDate} onChange={event => updateTimeDraft(trade, "buyDate", event.target.value)} /></td>
@@ -565,7 +687,7 @@ export default function Home() {
         <footer className="site-footer"><BrandLogo /><span>中圆量化收益分析仪表板</span><span>数据由公开协作成员共同维护</span><span>© 2026</span></footer>
       </div>
 
-      {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<input name="symbol" required maxLength={32} placeholder="600519" value={newTradeIdentity.symbol} onChange={event => setNewTradeIdentity(previous => ({ ...previous, symbol: event.target.value }))} onBlur={() => void confirmNewTradeIdentity("symbol")} /></label><label>股票名称<input name="stockName" required maxLength={80} placeholder="贵州茅台" value={newTradeIdentity.stockName} onChange={event => setNewTradeIdentity(previous => ({ ...previous, stockName: event.target.value }))} onBlur={() => void confirmNewTradeIdentity("stockName")} /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价（可留空）<input name="sellPrice" type="number" min="0.01" step="0.01" placeholder="-----" /></label><label>买入时间<input name="buyDate" required type="datetime-local" defaultValue={`${settings.startDate}T00:00`} /></label><label>卖出时间（可留空）<input name="sellDate" type="datetime-local" /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
+      {isModalOpen && <div className="modal-backdrop" role="presentation"><form className="trade-modal" onSubmit={addTrade}><div className="modal-heading"><div><p className="eyebrow">New trade</p><h2>新增交易</h2></div><button type="button" onClick={() => setIsModalOpen(false)}>×</button></div><div className="form-grid"><label>股票代码<StockIdentityInput name="symbol" ariaLabel="新增交易 股票代码" required maxLength={32} placeholder="600519" value={newTradeIdentity.symbol} onChange={value => setNewTradeIdentity(previous => ({ ...previous, symbol: value }))} onCommit={() => void confirmNewTradeIdentity("symbol")} onSelect={selectNewTradeIdentityCandidate} /></label><label>股票名称<StockIdentityInput name="stockName" ariaLabel="新增交易 股票名称" required maxLength={80} placeholder="贵州茅台" value={newTradeIdentity.stockName} onChange={value => setNewTradeIdentity(previous => ({ ...previous, stockName: value }))} onCommit={() => void confirmNewTradeIdentity("stockName")} onSelect={selectNewTradeIdentityCandidate} /></label><label>买入价<input name="buyPrice" required type="number" min="0.01" step="0.01" placeholder="0.00" /></label><label>卖出价（可留空）<input name="sellPrice" type="number" min="0.01" step="0.01" placeholder="-----" /></label><label>买入时间<input name="buyDate" required type="datetime-local" defaultValue={`${settings.startDate}T00:00`} /></label><label>卖出时间（可留空）<input name="sellDate" type="datetime-local" /></label></div><button className="modal-save" disabled={createTrade.isPending} type="submit">{createTrade.isPending ? "保存中…" : "保存交易"}<ArrowUpRight /></button></form></div>}
 
       <Dialog open={isImportOpen} onOpenChange={open => { setIsImportOpen(open); if (!open) resetImport(); }}>
         <DialogContent className="import-dialog" showCloseButton={false}>
