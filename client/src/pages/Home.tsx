@@ -13,6 +13,7 @@ import { read, utils as xlsxUtils, writeFile } from "xlsx";
 const BRAND_LOGO_URL = "/manus-storage/zhongyuan-company-logo_05345835.png";
 const POSTER_WHITE_LOGO_URL = "/manus-storage/zhongyuan-logo-white_e5733281.png";
 const POSTER_BACKGROUND_URL = "/manus-storage/strategy-poster-gold-city_c278d7e4.png";
+const EXPORT_CAPTURE_BOTTOM_GUARD_PX = 72;
 
 const DEFAULT_SETTINGS = {
   title: "中圆量化 月度收益走势",
@@ -600,15 +601,28 @@ export default function Home() {
       const lastContent = footer ?? sourceStage.lastElementChild;
       const sourceBounds = sourceStage.getBoundingClientRect();
       const lastContentBottom = lastContent instanceof HTMLElement ? lastContent.getBoundingClientRect().bottom - sourceBounds.top : 0;
-      const captureHeight = Math.ceil(Math.max(sourceStage.scrollHeight, sourceStage.offsetHeight, lastContentBottom) + 8);
+      const captureHeight = Math.ceil(Math.max(sourceStage.scrollHeight, sourceStage.offsetHeight, lastContentBottom) + EXPORT_CAPTURE_BOTTOM_GUARD_PX);
       if (captureHeight < 500) throw new Error("营销图内容高度异常");
+      delete sourceStage.dataset.exportCloneContentBottom;
+      delete sourceStage.dataset.exportCloneFooterBottom;
+      sourceStage.dataset.exportCaptureHeight = String(captureHeight);
       Object.assign(captureStage.style, { height: `${captureHeight}px`, minHeight: `${captureHeight}px`, overflow: "visible" });
       const canvas = await html2canvas(captureStage, {
         backgroundColor, useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: captureHeight, windowWidth: 1080, windowHeight: captureHeight,
         onclone: clonedDocument => {
           const clonedStage = clonedDocument.querySelector<HTMLElement>(`.${captureClass}`);
-          if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0", height: `${captureHeight}px`, minHeight: `${captureHeight}px`, overflow: "visible" });
-          if (clonedStage) applyExportAssets(clonedStage);
+          if (clonedStage) {
+            Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0", height: `${captureHeight}px`, minHeight: `${captureHeight}px`, overflow: "visible" });
+            applyExportAssets(clonedStage);
+            const clonedBounds = clonedStage.getBoundingClientRect();
+            const clonedFooter = clonedStage.querySelector<HTMLElement>("footer");
+            const clonedLastContent = clonedFooter ?? clonedStage.lastElementChild;
+            const clonedContentBottom = clonedLastContent instanceof HTMLElement ? clonedLastContent.getBoundingClientRect().bottom - clonedBounds.top : 0;
+            const clonedFooterBottom = clonedFooter ? clonedFooter.getBoundingClientRect().bottom - clonedBounds.top : 0;
+            sourceStage.dataset.exportCloneContentBottom = String(Math.ceil(clonedContentBottom));
+            sourceStage.dataset.exportCloneFooterBottom = String(Math.ceil(clonedFooterBottom));
+            if (clonedContentBottom + EXPORT_CAPTURE_BOTTOM_GUARD_PX > captureHeight) throw new Error("导出克隆画布高度不足，请缩短明细数量后重试");
+          }
         },
       });
       const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/png"));
