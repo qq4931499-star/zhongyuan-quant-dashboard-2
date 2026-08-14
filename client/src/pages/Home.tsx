@@ -591,18 +591,23 @@ export default function Home() {
       captureStage.id = `${stageId}-capture`;
       captureStage.classList.add(captureClass);
       applyExportAssets(captureStage);
-      Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", pointerEvents: "none", overflow: "hidden" });
+      Object.assign(captureHost.style, { position: "fixed", left: "-2000px", top: "0", width: "1080px", pointerEvents: "none", overflow: "visible" });
       captureHost.appendChild(captureStage);
       document.body.appendChild(captureHost);
       await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       await document.fonts?.ready;
-      const captureHeight = Math.ceil(captureStage.scrollHeight);
+      const footer = sourceStage.querySelector<HTMLElement>("footer");
+      const lastContent = footer ?? sourceStage.lastElementChild;
+      const sourceBounds = sourceStage.getBoundingClientRect();
+      const lastContentBottom = lastContent instanceof HTMLElement ? lastContent.getBoundingClientRect().bottom - sourceBounds.top : 0;
+      const captureHeight = Math.ceil(Math.max(sourceStage.scrollHeight, sourceStage.offsetHeight, lastContentBottom) + 8);
       if (captureHeight < 500) throw new Error("营销图内容高度异常");
+      Object.assign(captureStage.style, { height: `${captureHeight}px`, minHeight: `${captureHeight}px`, overflow: "visible" });
       const canvas = await html2canvas(captureStage, {
         backgroundColor, useCORS: true, allowTaint: false, scale: 1, imageTimeout: 15000, width: 1080, height: captureHeight, windowWidth: 1080, windowHeight: captureHeight,
         onclone: clonedDocument => {
           const clonedStage = clonedDocument.querySelector<HTMLElement>(`.${captureClass}`);
-          if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0" });
+          if (clonedStage) Object.assign(clonedStage.style, { position: "fixed", left: "0", top: "0", visibility: "visible", display: "block", margin: "0", height: `${captureHeight}px`, minHeight: `${captureHeight}px`, overflow: "visible" });
           if (clonedStage) applyExportAssets(clonedStage);
         },
       });
