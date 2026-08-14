@@ -3,6 +3,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { calculateDashboardMetrics, calculateTrend, formatCurrency, formatPercent, getTradeReturn, hasSellPrice, isRealizedTrade, type QuantTrade } from "@shared/quant";
 import { normalizeTradeDateTime } from "@shared/tradeImport";
 import type { StockSearchCandidate } from "@shared/stockIdentity";
+import { deriveExportPeriod, filterTradesForExportRange, getPresetExportDateRange, isValidExportDateRange, type ExportDatePreset } from "@shared/exportDateRange";
 import html2canvas from "html2canvas";
 import { ArrowUpRight, CalendarDays, CheckCircle2, CircleDollarSign, Download, FileSpreadsheet, FileUp, Loader2, Plus, ShieldCheck, Sparkles, Trash2, TrendingUp } from "lucide-react";
 import { ChangeEvent, FormEvent, KeyboardEvent, useEffect, useId, useMemo, useRef, useState } from "react";
@@ -14,6 +15,12 @@ const BRAND_LOGO_URL = "/manus-storage/zhongyuan-company-logo_05345835.png";
 const POSTER_WHITE_LOGO_URL = "/manus-storage/zhongyuan-logo-white_e5733281.png";
 const POSTER_BACKGROUND_URL = "/manus-storage/strategy-poster-gold-city_c278d7e4.png";
 const EXPORT_CAPTURE_BOTTOM_GUARD_PX = 72;
+const EXPORT_DATE_PRESETS: { value: Exclude<ExportDatePreset, "custom">; label: string }[] = [
+  { value: "today", label: "当日" },
+  { value: "week", label: "本周" },
+  { value: "month", label: "本月" },
+  { value: "all", label: "全部" },
+];
 
 const DEFAULT_SETTINGS = {
   title: "中圆量化 月度收益走势",
@@ -373,6 +380,8 @@ export default function Home() {
   const settings = snapshot?.settings ?? DEFAULT_SETTINGS;
   const trades = useMemo(() => ([...(snapshot?.trades ?? [])] as QuantTrade[]).sort((left, right) => right.buyDate.localeCompare(left.buyDate) || right.id - left.id), [snapshot?.trades]);
   const metrics = useMemo(() => calculateDashboardMetrics(trades), [trades]);
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   const [titleDraft, setTitleDraft] = useState(settings.title);
   const [subtitleDraft, setSubtitleDraft] = useState(settings.subtitle);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -382,6 +391,8 @@ export default function Home() {
   const [pendingExport, setPendingExport] = useState<"marketing" | "strategy" | null>(null);
   const [isExporting, setIsExporting] = useState(false);
   const [exportCount, setExportCount] = useState("5");
+  const [exportDatePreset, setExportDatePreset] = useState<ExportDatePreset>("all");
+  const [exportDateRange, setExportDateRange] = useState({ startDate: today, endDate: today });
   const [reportDate, setReportDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [selectedReportTradeIds, setSelectedReportTradeIds] = useState<number[]>([]);
   const [timeDrafts, setTimeDrafts] = useState<Record<number, { buyDate: string; sellDate: string }>>({});
@@ -400,9 +411,11 @@ export default function Home() {
   }), [trades]);
 
   const refresh = () => utils.dashboard.snapshot.invalidate();
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 86_400_000).toISOString().slice(0, 10);
   const reportShortcutDates = useMemo(() => Array.from(new Set([today, yesterday, ...trades.map(trade => trade.buyDate.slice(0, 10))])).sort((a, b) => b.localeCompare(a)).slice(0, 6), [today, yesterday, trades]);
+  const exportSelectedRange = useMemo(() => exportDatePreset === "custom" ? exportDateRange : getPresetExportDateRange(exportDatePreset, today), [exportDatePreset, exportDateRange, today]);
+  const exportFilteredTrades = useMemo(() => filterTradesForExportRange(trades, exportSelectedRange), [trades, exportSelectedRange]);
+  const exportPeriod = useMemo(() => deriveExportPeriod(exportFilteredTrades, exportSelectedRange, { startDate: settings.startDate, endDate: settings.endDate }), [exportFilteredTrades, exportSelectedRange, settings.startDate, settings.endDate]);
+  const exportSettings = useMemo(() => ({ ...settings, ...exportPeriod }), [settings, exportPeriod]);
   const updateSettings = trpc.dashboard.updateSettings.useMutation({ onSuccess: refresh, onError: error => toast.error(error.message) });
   const lookupStockIdentity = (query: string) => utils.dashboard.lookupStockIdentity.fetch({ query });
   const updateTrade = trpc.dashboard.updateTrade.useMutation({ onSuccess: updated => {
@@ -640,9 +653,20 @@ export default function Home() {
   const exportStrategyPoster = () => exportImage({ stageId: "strategy-poster", captureClass: "strategy-poster-capture", fileSuffix: "策略汇总海报", backgroundColor: "#0a0908" });
   const exportBuyReport = () => { setIsReportOpen(false); exportImage({ stageId: "buy-report", captureClass: "buy-report-capture", fileSuffix: `${reportDate.replaceAll("-", "")}-今日策略战报`, backgroundColor: "#080807" }); };
   const openExportOptions = (target: "marketing" | "strategy") => { setPendingExport(target); setIsExportOptionsOpen(true); };
-  const confirmPosterExport = () => { setIsExportOptionsOpen(false); if (pendingExport === "strategy") exportStrategyPoster(); if (pendingExport === "marketing") exportMarketingImage(); };
-  const resolvedExportCount = exportCount.trim().toLowerCase() === "全部" || exportCount.trim().toLowerCase() === "all" ? trades.length : Math.max(1, Math.min(trades.length, Number.parseInt(exportCount, 10) || 5));
-  const exportTrades = trades.slice(0, resolvedExportCount).sort((left, right) => left.buyDate.localeCompare(right.buyDate) || left.id - right.id);
+  const selectExportDatePreset = (preset: Exclude<ExportDatePreset, "custom">) => {
+    setExportDatePreset(preset);
+    const range = getPresetExportDateRange(preset, today);
+    if (range) setExportDateRange(range);
+  };
+  const confirmPosterExport = () => {
+    if (exportDatePreset === "custom" && !isValidExportDateRange(exportDateRange)) { toast.error("请设置有效的导出起止日期"); return; }
+    if (exportFilteredTrades.length === 0) { toast.error("所选日期范围内没有交易明细，请调整导出日期"); return; }
+    setIsExportOptionsOpen(false);
+    if (pendingExport === "strategy") exportStrategyPoster();
+    if (pendingExport === "marketing") exportMarketingImage();
+  };
+  const resolvedExportCount = exportFilteredTrades.length === 0 ? 0 : exportCount.trim().toLowerCase() === "全部" || exportCount.trim().toLowerCase() === "all" ? exportFilteredTrades.length : Math.max(1, Math.min(exportFilteredTrades.length, Number.parseInt(exportCount, 10) || 5));
+  const exportTrades = exportFilteredTrades.slice(0, resolvedExportCount).sort((left, right) => left.buyDate.localeCompare(right.buyDate) || left.id - right.id);
 
   if (isLoading) return <main className="loading-screen"><Loader2 className="spin" /><span>正在连接收益数据…</span></main>;
   if (isError) return <main className="loading-screen"><span>数据暂时不可用，请刷新页面后重试。</span></main>;
@@ -728,10 +752,10 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={isExportOptionsOpen} onOpenChange={(open) => { setIsExportOptionsOpen(open); if (!open) setPendingExport(null); }}>
-        <DialogContent className="report-dialog export-options-dialog"><DialogHeader><p className="eyebrow">Export settings</p><DialogTitle>{pendingExport === "strategy" ? "策略汇总海报" : "导出营销图"}</DialogTitle><DialogDescription>设置导出图片中交易明细的展示数量。</DialogDescription></DialogHeader><label className="report-date-field">明细数量<input aria-label="弹窗导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="例如 5 或 全部" /></label><div className="export-count-shortcuts"><button type="button" className={exportCount === "5" ? "active" : ""} onClick={() => setExportCount("5")}>5 条</button><button type="button" className={exportCount === "10" ? "active" : ""} onClick={() => setExportCount("10")}>10 条</button><button type="button" className={exportCount === "全部" ? "active" : ""} onClick={() => setExportCount("全部")}>全部</button></div><DialogFooter><button type="button" className="import-cancel" onClick={() => setIsExportOptionsOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={confirmPosterExport}><Download />确认导出</button></DialogFooter></DialogContent>
+        <DialogContent className="report-dialog export-options-dialog"><DialogHeader><p className="eyebrow">Export settings</p><DialogTitle>{pendingExport === "strategy" ? "策略汇总海报" : "导出营销图"}</DialogTitle><DialogDescription>按买入日期筛选导出范围，图片中的统计、趋势和交易明细将同步更新。</DialogDescription></DialogHeader><div className="export-date-settings"><span>导出日期范围</span><div className="export-date-shortcuts">{EXPORT_DATE_PRESETS.map(item => <button type="button" key={item.value} className={exportDatePreset === item.value ? "active" : ""} onClick={() => selectExportDatePreset(item.value)}>{item.label}</button>)}<button type="button" className={exportDatePreset === "custom" ? "active" : ""} onClick={() => setExportDatePreset("custom")}>自定义</button></div><div className="export-date-inputs"><label>开始日期<input aria-label="导出起始日期" type="date" value={exportDateRange.startDate} onChange={event => { setExportDatePreset("custom"); setExportDateRange(previous => ({ ...previous, startDate: event.target.value })); }} /></label><label>截止日期<input aria-label="导出截止日期" type="date" value={exportDateRange.endDate} onChange={event => { setExportDatePreset("custom"); setExportDateRange(previous => ({ ...previous, endDate: event.target.value })); }} /></label></div><small>{exportDatePreset === "all" ? `将导出全部 ${exportFilteredTrades.length} 条交易（${exportPeriod.startDate} 至 ${exportPeriod.endDate}）。` : `当前范围内有 ${exportFilteredTrades.length} 条交易。`}</small></div><label className="report-date-field">明细数量<input aria-label="弹窗导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="例如 5 或 全部" /></label><div className="export-count-shortcuts"><button type="button" className={exportCount === "5" ? "active" : ""} onClick={() => setExportCount("5")}>5 条</button><button type="button" className={exportCount === "10" ? "active" : ""} onClick={() => setExportCount("10")}>10 条</button><button type="button" className={exportCount === "全部" ? "active" : ""} onClick={() => setExportCount("全部")}>全部</button></div><DialogFooter><button type="button" className="import-cancel" onClick={() => setIsExportOptionsOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={confirmPosterExport}><Download />确认导出</button></DialogFooter></DialogContent>
       </Dialog>
 
-      <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={settings} trades={trades} detailTrades={exportTrades} /><StrategyPoster settings={settings} trades={trades} detailTrades={exportTrades} /><BuyReport trades={trades} reportDate={reportDate} selectedTradeIds={selectedReportTradeIds} /></div></div>
+      <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={exportSettings} trades={exportFilteredTrades} detailTrades={exportTrades} /><StrategyPoster settings={exportSettings} trades={exportFilteredTrades} detailTrades={exportTrades} /><BuyReport trades={trades} reportDate={reportDate} selectedTradeIds={selectedReportTradeIds} /></div></div>
     </main>
   );
 }
