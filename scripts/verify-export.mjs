@@ -72,10 +72,12 @@ try {
     marketing: await verifyTrendLabels("#marketing-export .trend-panel-export"),
   };
   if (!trendLabelLayouts.page.every(layout => layout.valid) || !trendLabelLayouts.marketing.every(layout => layout.valid)) throw new Error(`累计收益趋势标签发生重叠或越界：${JSON.stringify(trendLabelLayouts)}`);
-  const downloadAndVerify = async (buttonName, minHeight, maxHeight, outputPath) => {
+  const downloadAndVerify = async ({ buttonName, target, expectedStageId, expectedSuffix, minHeight, maxHeight, outputPath }) => {
     await page.getByRole("button", { name: buttonName }).click();
     const dialog = page.locator(".export-options-dialog");
     await dialog.waitFor({ state: "visible", timeout: 10000 });
+    const dialogTarget = await dialog.getAttribute("data-export-target");
+    if (dialogTarget !== target) throw new Error(`${buttonName} 打开了错误的导出设置目标：${dialogTarget}`);
     const dialogLayout = await dialog.evaluate((element) => {
       const overlay = document.querySelector('[data-slot="dialog-overlay"]');
       const close = element.querySelector('[data-slot="dialog-close"]');
@@ -105,12 +107,15 @@ try {
     const width = bytes.readUInt32BE(16);
     const height = bytes.readUInt32BE(20);
     if (width !== 1080 || height < minHeight || height > maxHeight) throw new Error(`PNG 尺寸异常：${width}×${height}`);
+    const lastExport = await page.evaluate(() => ({ stageId: document.documentElement.dataset.lastExportStage, fileSuffix: document.documentElement.dataset.lastExportFileSuffix }));
+    if (lastExport.stageId !== expectedStageId || lastExport.fileSuffix !== expectedSuffix) throw new Error(`${buttonName} 实际导出目标错误：${JSON.stringify(lastExport)}`);
+    if (!download.suggestedFilename().includes(expectedSuffix)) throw new Error(`${buttonName} 下载文件名错误：${download.suggestedFilename()}`);
     if (outputPath) await copyFile(filePath, outputPath);
     await rm(filePath, { force: true });
     return { fileName: download.suggestedFilename(), byteLength: bytes.length, width, height };
   };
-  const marketing = await downloadAndVerify("导出营销图", 900, 1450, process.env.EXPORT_VERIFY_OUTPUT);
-  const poster = await downloadAndVerify("策略汇总海报", 900, 1500, process.env.POSTER_VERIFY_OUTPUT);
+  const marketing = await downloadAndVerify({ buttonName: "导出营销图", target: "marketing", expectedStageId: "marketing-export", expectedSuffix: "营销图", minHeight: 900, maxHeight: 1450, outputPath: process.env.EXPORT_VERIFY_OUTPUT });
+  const poster = await downloadAndVerify({ buttonName: "策略汇总海报", target: "strategy", expectedStageId: "strategy-poster", expectedSuffix: "策略汇总海报", minHeight: 900, maxHeight: 1500, outputPath: process.env.POSTER_VERIFY_OUTPUT });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.waitForTimeout(100);
   const mobileTrendLabelLayouts = await verifyTrendLabels(".page-grid > .trend-panel");

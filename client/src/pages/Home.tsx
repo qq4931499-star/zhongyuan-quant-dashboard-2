@@ -249,9 +249,13 @@ function TrendLabel({ x, y, index, value, lastIndex, labelStep }: { x?: number; 
   const isLast = index === lastIndex;
   const currentIndex = index ?? 0;
   if (!isFirst && !isLast && currentIndex % labelStep !== 0) return null;
-  const above = !isFirst && !isLast && Math.floor(currentIndex / labelStep) % 2 === 1;
+  const currentBucket = Math.floor(currentIndex / labelStep);
+  const previousBucket = Math.floor(Math.max(0, lastIndex - 1) / labelStep);
+  const above = isLast && lastIndex % labelStep !== 0
+    ? previousBucket % 2 === 0
+    : currentBucket % 2 === 1;
   return (
-    <text x={x + (isFirst ? 13 : isLast ? -13 : 0)} y={y + (isFirst || isLast ? -16 : above ? -16 : 25)} textAnchor={isFirst ? "start" : isLast ? "end" : "middle"} className="trend-data-label">
+    <text x={x + (isFirst ? 13 : isLast ? -13 : 0)} y={y + (isFirst ? -16 : above ? -16 : 25)} textAnchor={isFirst ? "start" : isLast ? "end" : "middle"} className="trend-data-label">
       {formatPercent(value)}
     </text>
   );
@@ -262,7 +266,7 @@ function TrendChart({ trades, exportMode = false }: { trades: QuantTrade[]; expo
   const viewportWidth = useViewportWidth();
   const finalReturn = trend.at(-1)?.cumulativeReturn ?? 0;
   const chartHeight = exportMode ? 318 : 340;
-  const maxVisibleLabels = viewportWidth <= 690 ? 4 : exportMode ? 10 : 8;
+  const maxVisibleLabels = viewportWidth <= 690 ? 3 : exportMode ? 8 : 7;
   const labelStep = Math.max(1, Math.ceil(trend.length / maxVisibleLabels));
   const xAxisInterval = Math.max(0, Math.ceil(trend.length / maxVisibleLabels) - 1);
   return (
@@ -584,6 +588,8 @@ export default function Home() {
       toast.error("营销图画布尚未准备完成");
       return;
     }
+    document.documentElement.dataset.lastExportStage = stageId;
+    document.documentElement.dataset.lastExportFileSuffix = fileSuffix;
     setIsExporting(true);
     const captureHost = document.createElement("div");
     try {
@@ -658,12 +664,13 @@ export default function Home() {
     const range = getPresetExportDateRange(preset, today);
     if (range) setExportDateRange(range);
   };
-  const confirmPosterExport = () => {
+  const confirmExport = (target: "marketing" | "strategy") => {
     if (exportDatePreset === "custom" && !isValidExportDateRange(exportDateRange)) { toast.error("请设置有效的导出起止日期"); return; }
     if (exportFilteredTrades.length === 0) { toast.error("所选日期范围内没有交易明细，请调整导出日期"); return; }
     setIsExportOptionsOpen(false);
-    if (pendingExport === "strategy") exportStrategyPoster();
-    if (pendingExport === "marketing") exportMarketingImage();
+    setPendingExport(null);
+    if (target === "marketing") void exportMarketingImage();
+    else void exportStrategyPoster();
   };
   const resolvedExportCount = exportFilteredTrades.length === 0 ? 0 : exportCount.trim().toLowerCase() === "全部" || exportCount.trim().toLowerCase() === "all" ? exportFilteredTrades.length : Math.max(1, Math.min(exportFilteredTrades.length, Number.parseInt(exportCount, 10) || 5));
   const exportTrades = exportFilteredTrades.slice(0, resolvedExportCount).sort((left, right) => left.buyDate.localeCompare(right.buyDate) || left.id - right.id);
@@ -683,7 +690,7 @@ export default function Home() {
           </div>
           <div className="topbar-actions">
             <div className="date-stack"><span><CalendarDays />统计区间</span><div><input aria-label="统计起始日期" type="date" value={settings.startDate} onChange={event => persistSetting("startDate", event.target.value)} /><em>至</em><input aria-label="统计截止日期" type="date" value={settings.endDate} onChange={event => persistSetting("endDate", event.target.value)} /></div></div>
-            <div className="export-actions"><button className="poster-export-button" onClick={() => openExportOptions("strategy")} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "策略汇总海报"}</button><button className="export-button" onClick={() => openExportOptions("marketing")} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button></div>
+            <div className="export-actions"><button className="poster-export-button" data-export-target="strategy" onClick={() => openExportOptions("strategy")} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "策略汇总海报"}</button><button className="export-button" data-export-target="marketing" onClick={() => openExportOptions("marketing")} disabled={isExporting}>{isExporting ? <Loader2 className="spin" /> : <Download />}{isExporting ? "生成中" : "导出营销图"}</button></div>
           </div>
         </header>
 
@@ -752,7 +759,7 @@ export default function Home() {
       </Dialog>
 
       <Dialog open={isExportOptionsOpen} onOpenChange={(open) => { setIsExportOptionsOpen(open); if (!open) setPendingExport(null); }}>
-        <DialogContent className="report-dialog export-options-dialog"><DialogHeader><p className="eyebrow">Export settings</p><DialogTitle>{pendingExport === "strategy" ? "策略汇总海报" : "导出营销图"}</DialogTitle><DialogDescription>按买入日期筛选导出范围，图片中的统计、趋势和交易明细将同步更新。</DialogDescription></DialogHeader><div className="export-date-settings"><span>导出日期范围</span><div className="export-date-shortcuts">{EXPORT_DATE_PRESETS.map(item => <button type="button" key={item.value} className={exportDatePreset === item.value ? "active" : ""} onClick={() => selectExportDatePreset(item.value)}>{item.label}</button>)}<button type="button" className={exportDatePreset === "custom" ? "active" : ""} onClick={() => setExportDatePreset("custom")}>自定义</button></div><div className="export-date-inputs"><label>开始日期<input aria-label="导出起始日期" type="date" value={exportDateRange.startDate} onChange={event => { setExportDatePreset("custom"); setExportDateRange(previous => ({ ...previous, startDate: event.target.value })); }} /></label><label>截止日期<input aria-label="导出截止日期" type="date" value={exportDateRange.endDate} onChange={event => { setExportDatePreset("custom"); setExportDateRange(previous => ({ ...previous, endDate: event.target.value })); }} /></label></div><small>{exportDatePreset === "all" ? `将导出全部 ${exportFilteredTrades.length} 条交易（${exportPeriod.startDate} 至 ${exportPeriod.endDate}）。` : `当前范围内有 ${exportFilteredTrades.length} 条交易。`}</small></div><label className="report-date-field">明细数量<input aria-label="弹窗导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="例如 5 或 全部" /></label><div className="export-count-shortcuts"><button type="button" className={exportCount === "5" ? "active" : ""} onClick={() => setExportCount("5")}>5 条</button><button type="button" className={exportCount === "10" ? "active" : ""} onClick={() => setExportCount("10")}>10 条</button><button type="button" className={exportCount === "全部" ? "active" : ""} onClick={() => setExportCount("全部")}>全部</button></div><DialogFooter><button type="button" className="import-cancel" onClick={() => setIsExportOptionsOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={confirmPosterExport}><Download />确认导出</button></DialogFooter></DialogContent>
+        <DialogContent className="report-dialog export-options-dialog" data-export-target={pendingExport ?? ""}><DialogHeader><p className="eyebrow">Export settings</p><DialogTitle>{pendingExport === "strategy" ? "策略汇总海报" : "导出营销图"}</DialogTitle><DialogDescription>按买入日期筛选导出范围，图片中的统计、趋势和交易明细将同步更新。</DialogDescription></DialogHeader><div className="export-date-settings"><span>导出日期范围</span><div className="export-date-shortcuts">{EXPORT_DATE_PRESETS.map(item => <button type="button" key={item.value} className={exportDatePreset === item.value ? "active" : ""} onClick={() => selectExportDatePreset(item.value)}>{item.label}</button>)}<button type="button" className={exportDatePreset === "custom" ? "active" : ""} onClick={() => setExportDatePreset("custom")}>自定义</button></div><div className="export-date-inputs"><label>开始日期<input aria-label="导出起始日期" type="date" value={exportDateRange.startDate} onChange={event => { setExportDatePreset("custom"); setExportDateRange(previous => ({ ...previous, startDate: event.target.value })); }} /></label><label>截止日期<input aria-label="导出截止日期" type="date" value={exportDateRange.endDate} onChange={event => { setExportDatePreset("custom"); setExportDateRange(previous => ({ ...previous, endDate: event.target.value })); }} /></label></div><small>{exportDatePreset === "all" ? `将导出全部 ${exportFilteredTrades.length} 条交易（${exportPeriod.startDate} 至 ${exportPeriod.endDate}）。` : `当前范围内有 ${exportFilteredTrades.length} 条交易。`}</small></div><label className="report-date-field">明细数量<input aria-label="弹窗导出明细数量" value={exportCount} onChange={event => setExportCount(event.target.value)} placeholder="例如 5 或 全部" /></label><div className="export-count-shortcuts"><button type="button" className={exportCount === "5" ? "active" : ""} onClick={() => setExportCount("5")}>5 条</button><button type="button" className={exportCount === "10" ? "active" : ""} onClick={() => setExportCount("10")}>10 条</button><button type="button" className={exportCount === "全部" ? "active" : ""} onClick={() => setExportCount("全部")}>全部</button></div><DialogFooter><button type="button" className="import-cancel" onClick={() => setIsExportOptionsOpen(false)}>取消</button><button type="button" className="report-confirm" onClick={() => pendingExport && confirmExport(pendingExport)} disabled={!pendingExport}><Download />确认导出</button></DialogFooter></DialogContent>
       </Dialog>
 
       <div className="marketing-export-host"><div ref={exportRef}><MarketingExport settings={exportSettings} trades={exportFilteredTrades} detailTrades={exportTrades} /><StrategyPoster settings={exportSettings} trades={exportFilteredTrades} detailTrades={exportTrades} /><BuyReport trades={trades} reportDate={reportDate} selectedTradeIds={selectedReportTradeIds} /></div></div>
