@@ -95,10 +95,21 @@ try {
       return { position: style.position, zIndex: style.zIndex, top: rect.top, overlayPosition: overlayStyle?.position, overlayZIndex: overlayStyle?.zIndex, safe, buttonHeights: buttonRects.map(button => Math.round(button.height)) };
     });
     if (dialogLayout.position !== "fixed" || dialogLayout.overlayPosition !== "fixed" || Number(dialogLayout.zIndex) < 1001 || Number(dialogLayout.overlayZIndex) < 1000 || !dialogLayout.safe) throw new Error(`导出设置弹窗布局或层级异常：${JSON.stringify(dialogLayout)}`);
-    const [download] = await Promise.all([
-      page.waitForEvent("download", { timeout: 30000 }),
-      dialog.getByRole("button", { name: "确认导出" }).click(),
-    ]);
+    const downloadPromise = page.waitForEvent("download", { timeout: 30000 });
+    await dialog.getByRole("button", { name: "确认导出" }).click();
+    await page.waitForFunction(expectedTarget => {
+      const marketing = document.querySelector('[data-export-target="marketing"]');
+      const strategy = document.querySelector('[data-export-target="strategy"]');
+      if (!marketing || !strategy) return false;
+      return marketing.getAttribute("data-export-loading") === (expectedTarget === "marketing" ? "true" : "false")
+        && strategy.getAttribute("data-export-loading") === (expectedTarget === "strategy" ? "true" : "false");
+    }, target, { timeout: 10000 });
+    const loadingState = await page.evaluate(() => ({
+      marketing: document.querySelector('[data-export-target="marketing"]')?.getAttribute("data-export-loading"),
+      strategy: document.querySelector('[data-export-target="strategy"]')?.getAttribute("data-export-loading"),
+    }));
+    if (loadingState.marketing !== (target === "marketing" ? "true" : "false") || loadingState.strategy !== (target === "strategy" ? "true" : "false")) throw new Error(`${buttonName} 加载状态未独立显示：${JSON.stringify(loadingState)}`);
+    const download = await downloadPromise;
     const filePath = await download.path();
     if (!filePath) throw new Error("未获得下载文件路径");
     const bytes = await readFile(filePath);
@@ -112,7 +123,8 @@ try {
     if (!download.suggestedFilename().includes(expectedSuffix)) throw new Error(`${buttonName} 下载文件名错误：${download.suggestedFilename()}`);
     if (outputPath) await copyFile(filePath, outputPath);
     await rm(filePath, { force: true });
-    return { fileName: download.suggestedFilename(), byteLength: bytes.length, width, height };
+    await page.waitForFunction(() => Array.from(document.querySelectorAll("[data-export-loading]")).every(button => button.getAttribute("data-export-loading") === "false"), { timeout: 10000 });
+    return { fileName: download.suggestedFilename(), byteLength: bytes.length, width, height, loadingState };
   };
   const marketing = await downloadAndVerify({ buttonName: "导出营销图", target: "marketing", expectedStageId: "marketing-export", expectedSuffix: "营销图", minHeight: 900, maxHeight: 1450, outputPath: process.env.EXPORT_VERIFY_OUTPUT });
   const poster = await downloadAndVerify({ buttonName: "策略汇总海报", target: "strategy", expectedStageId: "strategy-poster", expectedSuffix: "策略汇总海报", minHeight: 900, maxHeight: 1500, outputPath: process.env.POSTER_VERIFY_OUTPUT });

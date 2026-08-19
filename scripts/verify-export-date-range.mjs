@@ -8,7 +8,7 @@ function pngSize(buffer) {
 const browser = await chromium.launch({ headless: true, executablePath: "/usr/bin/chromium" });
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, acceptDownloads: true });
 
-async function inspectRange(expectedStart, expectedEnd) {
+async function inspectRange(expectedStart, expectedEnd, allowEmpty = false) {
   const result = await page.evaluate(() => {
     const getDates = id => Array.from(document.querySelectorAll(`#${id} tbody tr`)).map(row => row.dataset.buyDate ?? "");
     return {
@@ -23,13 +23,16 @@ async function inspectRange(expectedStart, expectedEnd) {
   const resolvedStart = expectedStart ?? actualDates[0];
   const resolvedEnd = expectedEnd ?? actualDates.at(-1);
   const inRange = date => date.slice(0, 10) >= resolvedStart && date.slice(0, 10) <= resolvedEnd;
-  if (result.marketingDates.length === 0 || result.strategyDates.length === 0) throw new Error(`日期范围 ${resolvedStart} 至 ${resolvedEnd} 未筛选到交易`);
+  if (result.marketingDates.length === 0 || result.strategyDates.length === 0) {
+    if (allowEmpty) return { ...result, resolvedStart: expectedStart, resolvedEnd: expectedEnd, empty: true };
+    throw new Error(`日期范围 ${resolvedStart} 至 ${resolvedEnd} 未筛选到交易`);
+  }
   if (!result.marketingDates.every(inRange) || !result.strategyDates.every(inRange)) throw new Error(`导出明细包含范围外交易：${JSON.stringify(result)}`);
   const displayStart = resolvedStart.replaceAll("-", ".");
   const displayEnd = resolvedEnd.replaceAll("-", ".");
   if (!result.marketingPeriod.includes(displayStart) || !result.marketingPeriod.includes(displayEnd) || !result.strategyPeriod.includes(displayStart) || !result.strategyPeriod.includes(displayEnd)) throw new Error(`导出统计区间未同步：${JSON.stringify(result)}`);
   if (!result.marketingTotal.includes(`${result.marketingDates.length} / ${result.marketingDates.length}`)) throw new Error(`营销图明细数量未同步：${JSON.stringify(result)}`);
-  return { ...result, resolvedStart, resolvedEnd };
+  return { ...result, resolvedStart, resolvedEnd, empty: false };
 }
 
 async function readDownload(download) {
@@ -49,13 +52,20 @@ async function chooseRange(range) {
     await dateShortcuts.getByRole("button", { name: range.label }).click();
   }
   await page.getByLabel("弹窗导出明细数量").fill("全部");
-  return inspectRange(range.startDate, range.endDate);
+  return inspectRange(range.startDate, range.endDate, range.allowEmpty);
 }
 
 async function exportForRange(buttonName, range) {
   await page.getByRole("button", { name: buttonName }).click();
   const rangeResult = await chooseRange(range);
   if (process.env.EXPORT_DATE_RANGE_SCREENSHOT && range.key === "custom" && buttonName === "策略汇总海报") await page.screenshot({ path: process.env.EXPORT_DATE_RANGE_SCREENSHOT, fullPage: false });
+  if (rangeResult.empty) {
+    await page.getByRole("button", { name: "确认导出" }).click();
+    await page.waitForTimeout(150);
+    if (!(await page.locator(".export-options-dialog").isVisible())) throw new Error(`${buttonName} 在无交易日期范围内不应开始下载`);
+    await page.getByRole("button", { name: "取消" }).click();
+    return { range: range.key, interval: `${range.startDate} 至 ${range.endDate}`, trades: 0, empty: true };
+  }
   const downloadPromise = page.waitForEvent("download", { timeout: 120000 });
   await page.getByRole("button", { name: "确认导出" }).click();
   const png = await readDownload(await downloadPromise);
@@ -71,7 +81,7 @@ try {
   const weekStart = new Date(`${today}T00:00:00Z`);
   weekStart.setUTCDate(weekStart.getUTCDate() - ((weekStart.getUTCDay() + 6) % 7));
   const ranges = [
-    { key: "today", label: "当日", startDate: today, endDate: today },
+    { key: "today", label: "当日", startDate: today, endDate: today, allowEmpty: true },
     { key: "week", label: "本周", startDate: weekStart.toISOString().slice(0, 10), endDate: today },
     { key: "month", label: "本月", startDate: `${today.slice(0, 7)}-01`, endDate: today },
     { key: "all", label: "全部", startDate: null, endDate: null },
