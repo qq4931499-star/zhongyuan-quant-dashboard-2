@@ -234,3 +234,6 @@
 - [x] 从 root 的 authorized_keys 移除中圆量化部署专用 SSH 公钥
 - [x] 验证部署专用私钥无法再登录且网站服务持续正常
 - [x] 交付 SSH 密钥清理结果与后续访问边界说明
+- [x] 核对 zhongyuanzb.xyz 当前权威 DNS 委派与公网解析记录
+- [x] 评估 DNSPod“DNS 地址待修改”提示对现有 HTTPS 站点的实际影响
+- [x] 交付不影响线上访问的 DNS 处理建议

@@ -14,3 +14,6 @@
 | 2026-08-20 17:15 | 隔离与回归验收 | `zhongyuan-quant.service` 为 active，3108 仅监听 `127.0.0.1`；快照接口返回 HTTP 200。HTTPS 证书有效至 2026-11-18。`seedfler.com`、`xinlongseafood.com`、`yingshunai.com` 均返回 HTTP 200。 |
 | 2026-08-20 17:16 | 本地静态资源验收 | 公网与服务器本机均可读取公司 Logo、白色海报 Logo 和金色城市海报背景，均返回 HTTP 200。 |
 | 2026-08-20 17:18 | 部署密钥撤销 | 已从 root 的 `authorized_keys` 移除精确匹配的 1 条部署专用 ED25519 公钥；该私钥随后被 SSH 拒绝，沙箱中的私钥及公钥副本已删除；`https://zhongyuanzb.xyz` 仍返回 HTTP 200。 |
+| 2026-08-21 04:55 | DNSPod 状态截图 | 截图显示 `zhongyuanzb.xyz` 被标为“DNS 地址待修改”；DNSPod 提示“未正常使用 DNSPod 解析服务”，并建议将名称服务器设为 `a.dnspod.com`、`b.dnspod.com`、`c.dnspod.com`。该截图本身未显示当前权威名称服务器或 A 记录。 |
+| 2026-08-21 17:20 | 公共 DNS 核验 | Google Public DNS 返回当前权威名称服务器正是 `a.dnspod.com`、`b.dnspod.com`、`c.dnspod.com`；根域名与 `www` 的 A 记录均为 `43.129.210.253`，根域名未见 AAAA 记录。 |
+| 2026-08-21 17:20 | HTTPS 连通性复核 | 从公网访问 `https://zhongyuanzb.xyz/` 与 `https://www.zhongyuanzb.xyz/` 均返回 HTTP 200，远端地址均为 `43.129.210.253`。 |
