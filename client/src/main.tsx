@@ -8,6 +8,7 @@ import App from "./App";
 import { startLogin } from "./const";
 import "./index.css";
 
+const SELF_HOSTED = import.meta.env.VITE_SELF_HOSTED === "true";
 const queryClient = new QueryClient();
 
 const redirectToLoginIfUnauthorized = (error: unknown) => {
@@ -16,7 +17,7 @@ const redirectToLoginIfUnauthorized = (error: unknown) => {
 
   const isUnauthorized = error.message === UNAUTHED_ERR_MSG;
 
-  if (!isUnauthorized) return;
+  if (!isUnauthorized || SELF_HOSTED) return;
 
   startLogin();
 };
@@ -47,6 +48,7 @@ const trpcClient = trpc.createClient({
         // (Safari ITP / private browsing / WebView), the runtime mirrors the
         // session into sessionStorage so we can forward it as a Bearer token.
         // The regular OAuth cookie flow keeps working and takes priority server-side.
+        if (SELF_HOSTED) return {};
         try {
           const raw = sessionStorage.getItem("manus-cookie");
           if (raw) {

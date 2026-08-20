@@ -31,11 +31,14 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+  const selfHosted = process.env.SELF_HOSTED === "true";
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  registerStorageProxy(app);
-  registerOAuthRoutes(app);
+  if (!selfHosted) {
+    registerStorageProxy(app);
+    registerOAuthRoutes(app);
+  }
   // tRPC API
   app.use(
     "/api/trpc",
@@ -58,7 +61,8 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
-  server.listen(port, () => {
+  const host = selfHosted ? "127.0.0.1" : undefined;
+  server.listen(port, host, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });
 }

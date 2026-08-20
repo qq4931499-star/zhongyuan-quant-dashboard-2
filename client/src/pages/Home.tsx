@@ -11,9 +11,11 @@ import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YA
 import { toast } from "sonner";
 import { read, utils as xlsxUtils, writeFile } from "xlsx";
 
-const BRAND_LOGO_URL = "/manus-storage/zhongyuan-company-logo_05345835.png";
-const POSTER_WHITE_LOGO_URL = "/manus-storage/zhongyuan-logo-white_e5733281.png";
-const POSTER_BACKGROUND_URL = "/manus-storage/strategy-poster-gold-city_c278d7e4.png";
+const SELF_HOSTED = import.meta.env.VITE_SELF_HOSTED === "true";
+const ASSET_BASE_URL = SELF_HOSTED ? "/assets/brand" : "/manus-storage";
+const BRAND_LOGO_URL = `${ASSET_BASE_URL}/${SELF_HOSTED ? "zhongyuan-company-logo.png" : "zhongyuan-company-logo_05345835.png"}`;
+const POSTER_WHITE_LOGO_URL = `${ASSET_BASE_URL}/${SELF_HOSTED ? "zhongyuan-logo-white.png" : "zhongyuan-logo-white_e5733281.png"}`;
+const POSTER_BACKGROUND_URL = `${ASSET_BASE_URL}/${SELF_HOSTED ? "strategy-poster-gold-city.png" : "strategy-poster-gold-city_c278d7e4.png"}`;
 const EXPORT_CAPTURE_BOTTOM_GUARD_PX = 72;
 const EXPORT_DATE_PRESETS: { value: Exclude<ExportDatePreset, "custom">; label: string }[] = [
   { value: "today", label: "当日" },
